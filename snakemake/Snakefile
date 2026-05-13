@@ -1,0 +1,250 @@
+# ==============================================================================
+# IMPORTS
+# ==============================================================================
+
+import os
+import shutil
+from pathlib import Path
+import pandas as pd
+import json
+from itertools import product
+import yaml
+import csv
+
+# ==============================================================================
+
+# ==============================================================================
+localrules: make_configs
+
+# ==============================================================================
+# BASE PIPELINE CONFIGURATION
+# ==============================================================================
+
+def load_yaml(path):
+    with open(path) as f:
+        return yaml.safe_load(f)
+
+# def get_complete_samples(wildcards):
+#     """Called after make_configs has run — reads skipped files to determine complete samples."""
+#     complete = []
+#     for dataset, samples in SAMPLES.items():
+#         for sample_key in samples:
+#             skipped_path = (
+#                 RES_IDX['cellranger/configs']['outdir'] +
+#                 f"cellranger_configs/{dataset}/{sample_key}_skipped.tsv"
+#             )
+#             if os.path.exists(skipped_path):
+#                 with open(skipped_path) as f:
+#                     rows = list(csv.DictReader(f, delimiter="\t"))
+#                 if not rows:  # empty = complete
+#                     complete.append((dataset, sample_key))
+#     return expand(
+#         RES_IDX['cellranger/multi']['outdir'] + "{dataset}/{sample}/outs/per_sample_outs/{sample}/metrics_summary.csv",
+#         zip,
+#         dataset=[d for d, s in complete],
+#         sample=[s for d, s in complete]
+#     )
+
+
+def complete_cellranger_outputs(wildcards):
+    complete = []
+    for dataset, samples in SAMPLES.items():
+        for sample_key in samples:
+            skipped_path = (
+                RES_IDX['cellranger/configs']['outdir'] + f"{dataset}/tracking/{sample_key}_record.tsv"
+            )
+            # trigger checkpoint - snakemake waits here until all make_configs jobs done
+            checkpoints.make_configs.get(dataset=dataset, sample=sample_key)
+
+            with open(skipped_path) as f:
+                rows = list(csv.DictReader(f, delimiter="\t"))
+            if not rows:
+                complete.append((dataset, sample_key))
+
+    return expand(
+        RES_IDX['cellranger/multi']['outdir'] + "{dataset}/{sample}/outs/per_sample_outs/{sample}/metrics_summary.csv",
+        zip,
+        dataset=[d for d, s in complete],
+        sample=[s for d, s in complete]
+    )
+
+
+
+base_config = load_yaml("snakemake/config/base.yaml")
+
+RULE_IDX = {}
+
+for module, steps in base_config["modules"].items():
+    for step in steps:
+        sub = step.get("submodule")
+
+        key = f"{module}/{sub}/{step['rule']}" if sub else f"{module}/{step['rule']}"
+
+        base_path = Path("workflow/rules") / module
+        script_path = Path("snakemake/workflow/scripts") / module
+
+        if sub:
+            base_path /= sub
+            script_path /= sub
+
+        RULE_IDX[key] = {
+            "module": module,
+            "submodule": sub,
+            "rule": step["rule"],
+            "type": step["type"],
+            "smk": str(base_path / f"{step['rule']}.smk"),
+            "r": (
+                str(script_path / f"{step['rule']}.R")
+                if step["type"] == "R"
+                else None
+            )
+        }
+
+RULES = [
+    meta["smk"]
+    for meta in RULE_IDX.values()
+]
+
+
+# ==============================================================================
+# PROJECT CONFIGURATION
+# ==============================================================================
+
+PROJECT_NAME    = config['project_info']['name']
+PROJECT_VERSION = config['project_info']['version']
+PROJECT         = f"{PROJECT_NAME}_{PROJECT_VERSION}"
+
+HOME = os.path.expanduser("~")
+# or: HOME = str(Path.home())
+
+TEMP_DIR = os.path.join(HOME, "temp", PROJECT)
+
+RES_IDX = {
+    key: {
+        "outdir": f"projects/{PROJECT_NAME}/{PROJECT}/results/{meta['module']}/{meta['rule']}/",
+        "module": meta["module"],
+        "rule": meta["rule"],
+    }
+    for key, meta in RULE_IDX.items()
+}
+
+# print(RES_IDX)
+
+LOG_IDX = {
+    key: {
+        "log": f"projects/{PROJECT_NAME}/{PROJECT}/logs/{meta['module']}/{meta['rule']}/"
+    }
+    for key, meta in RULE_IDX.items()
+}
+
+DATASETS = list(config["datasets"].keys())
+MODALITIES = ["gex", "csp", "vdj"]
+
+# SAMPLES = {}
+# for dataset in config["datasets"]:
+#     with open(config["datasets"][dataset]["sample_ids"]) as f:
+#         print(f)
+#         SAMPLES[dataset] = [x.strip() for x in f if x.strip()]
+
+# SAMPLES = {}
+# for dataset in config["datasets"]:
+#     SAMPLES[dataset] = {m: [] for m in MODALITIES}
+#     with open(config["datasets"][dataset]["sample_ids"]) as f:
+#         reader = csv.DictReader(f, delimiter="\t")
+#         for row in reader:
+#             for modality in MODALITIES:
+#                 value = row[modality].strip()
+#                 if value:
+#                     SAMPLES[dataset][modality].append(value)
+
+
+
+def shared_tokens(sample_names):
+
+    split_names = [s.split("_") for s in sample_names]
+
+    shared = []
+
+    for token in split_names[0]:
+        if all(token in parts for parts in split_names[1:]):
+            if not token.startswith("S"):
+                shared.append(token)
+
+    return "_".join(shared)
+
+
+SAMPLES = {}
+
+for dataset in config["datasets"]:
+
+    SAMPLES[dataset] = {}
+
+    with open(config["datasets"][dataset]["sample_ids"]) as f:
+
+        reader = csv.DictReader(f, delimiter="\t")
+
+        for row in reader:
+
+            # collect modality samples
+            samples = {
+                m: row[m].strip()
+                for m in MODALITIES
+                if row[m].strip()
+            }
+
+            # compute shared key
+            sample_key = shared_tokens(samples.values())
+
+            # store by key (IMPORTANT CHANGE)
+            SAMPLES[dataset][sample_key] = samples
+
+COMPLETE_SAMPLES = {
+    ds: {
+        sk: mods
+        for sk, mods in samples.items()
+        if all(m in mods for m in MODALITIES)
+    }
+    for ds, samples in SAMPLES.items()
+}
+
+samplesheets = expand(
+    RES_IDX['setup/samplesheet']['outdir'] + "samplesheet_{dataset}_{modality}.tsv",
+    dataset=DATASETS,
+    modality=MODALITIES
+)
+
+
+# cellranger_configs = []
+# for dataset, samples in SAMPLES.items():
+#     for sample in samples:
+#         cellranger_configs.append(
+#             RES_IDX['cellranger/configs']['outdir'] + f"cellranger_configs/{dataset}/{sample}_config.csv"
+#         )
+
+cellranger_configs = expand(
+    RES_IDX['cellranger/configs']['outdir'] + "{dataset}/configfiles/{sample_key}_config.csv",
+    zip,
+    dataset=[ds for ds in DATASETS for sk in SAMPLES[ds].keys()],
+    sample_key=[sk for ds in DATASETS for sk in SAMPLES[ds].keys()]
+)
+
+cellranger_multi_outs = expand(
+    RES_IDX['cellranger/multi']['outdir'] + "{dataset}/{sample_key}/outs/per_sample_outs/{sample_key}/metrics_summary.csv",
+    zip,
+    dataset=[ds for ds in DATASETS for sk in SAMPLES[ds].keys()],
+    sample_key=[sk for ds in DATASETS for sk in SAMPLES[ds].keys()]
+)
+
+# print(cellranger_configs)
+
+include: "workflow/rules/setup/samplesheet.smk"
+include: "workflow/rules/cellranger/configs.smk"
+include: "workflow/rules/cellranger/cellranger_multi.smk"
+
+rule all:
+    input:
+        samplesheets,
+        cellranger_configs,
+        complete_cellranger_outputs
+
+        

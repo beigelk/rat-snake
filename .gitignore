@@ -1,0 +1,14 @@
+# Ignore inputs
+input/
+
+# Ignore outputs
+projects/
+
+# Ignore snakemake
+.snakemake/
+
+# Ignore development folder
+dev/
+
+# ignore Cellrange Martian Runtime objects
+*.mro

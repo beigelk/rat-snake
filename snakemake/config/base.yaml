@@ -1,0 +1,10 @@
+modules:
+  setup:
+    - rule: samplesheet
+      type: shell
+
+  cellranger:
+    - rule: configs
+      type: shell
+    - rule: multi
+      type: shell

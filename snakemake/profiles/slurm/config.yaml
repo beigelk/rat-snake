@@ -1,0 +1,36 @@
+executor: slurm
+jobs: 100
+latency-wait: 60
+rerun-incomplete: true
+printshellcmds: true
+
+default-resources:
+  slurm_account: "hpcusers"
+  slurm_partition: "defq"
+  mem_mb: 8000
+  runtime: 60        # minutes
+  tasks: 1
+
+set-threads:
+  run_cellranger_multi: 16
+
+set-resources:
+  run_cellranger_multi:
+    mem_mb: 64000
+    runtime: 720     # minutes
+
+# # Default cluster command for job submission
+# cluster: "sbatch --time={resources.time} --mem={resources.mem_mb} --cpus-per-task={threads} --partition={resources.partition}"
+
+# # Default resources if not specified in Snakefile
+# default-resources:
+#   time: "24:00:00"
+#   mem_mb: 64000
+#   threads: 16
+#   partition: "standard"
+
+# # Other profile options
+# jobs: 10
+# latency-wait: 60
+# rerun-incomplete: true
+# use-conda: true
