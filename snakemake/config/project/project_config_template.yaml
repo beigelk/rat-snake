@@ -1,0 +1,25 @@
+project_info:
+  name: example_project
+  version: v0
+
+datasets:
+  dataset1:
+    sample_ids: /user/data/dataset1/metadata/sample_ids.tsv
+    filetype: fastq.gz
+    input_dirs:
+      gex: /user/data/dataset1/GEX/fastq
+      csp: /user/data/dataset1/CSP/fastq
+      vdj: /user/data/dataset1/VDJ/fastq
+
+  HTS_SO243:
+    sample_ids: /user/data/dataset2/metadata/sample_ids.tsv
+    filetype: fastq.gz
+    input_dirs:
+      gex: /user/data/dataset2/fastq
+      csp: /user/data/dataset2/fastq
+      vdj: /user/data/dataset2/fastq
+
+cellranger:
+  gex_reference: /user/references/cellranger_ref/refdata-gex-GRCh38-2024-A
+  csp_reference: /user/references/csp_reference/feature_reference.csv
+  vdj_reference: /user/references/cellranger_ref/refdata-cellranger-vdj-GRCh38-alts-ensembl-7.1.0
