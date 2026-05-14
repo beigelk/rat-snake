@@ -64,7 +64,8 @@ checkpoint make_configs:
         with open(output.config, "w") as out:
             out.write("[gene-expression]\n")
             out.write(f"reference,{config['cellranger']['gex_reference']}\n")
-            out.write("create-bam,false\n\n")
+            out.write("create-bam,false\n")
+            out.write("check-library-compatibility,false\n\n")
 
             out.write("[feature]\n")
             out.write(f"reference,{config['cellranger']['csp_reference']}\n\n")

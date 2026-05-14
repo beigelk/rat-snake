@@ -118,6 +118,13 @@ logdir="projects/${project_name}/${project}/logs"
 mkdir -p ${logdir}
 
 # ───────────────────────────────────────────────
+# Make config dir
+# ───────────────────────────────────────────────
+configdir="projects/${project_name}/${project}/configs"
+mkdir -p ${configdir}
+cp ${config} ${configdir}
+
+# ───────────────────────────────────────────────
 # Run Snakemake
 # ───────────────────────────────────────────────
 log "INFO" "Running rat-snake pipeline"
@@ -162,11 +169,15 @@ script -q -e -c "
         --profile '$profile_dir' \
         --configfile '$config' \
         $dryrun_flag \
+        --rerun-triggers mtime \
         --printshellcmds \
         --use-singularity \
         --rerun-incomplete 
     " /dev/null | tee "${logdir}/rat-snake.log"
 
 log "PASS" "sc-rat-snake Snakemake pipeline finished successfully."
+
+# clean up
+rm -rf .snakemake/tmp.*
 
     
