@@ -2,12 +2,12 @@
 
 ##################################################
 ################# USAGE EXAMPLE ##################
-# bash sc-rat-snake_run.sh -c config/project_configs.yaml -r run
+# bash rat-snake_run.sh -c config/project_configs.yaml -r run
 ##################################################
 ##################################################
 
 set -euo pipefail
-source snakemake/envs/conda.sh
+source snakemake/envs/conda/conda.sh
 
 # ───────────────────────────────────────────────
 # Logging helper
@@ -36,7 +36,7 @@ while getopts ":c:r:p:" opt; do
             runtype="$OPTARG"
             ;;
             *)
-            log "ERROR" "Invalid mode: $OPTARG (allowed: run, dry-run)"
+            log "ERROR" "Invalid runtype option: $OPTARG (allowed: run, dry-run)"
             exit 1
             ;;
         esac
@@ -47,7 +47,7 @@ while getopts ":c:r:p:" opt; do
             profile="$OPTARG"
             ;;
             *)
-            log "ERROR" "Invalid mode: $OPTARG (allowed: local, slurm)"
+            log "ERROR" "Invalid profile option: $OPTARG (allowed: local, slurm)"
             exit 1
             ;;
         esac
@@ -128,7 +128,7 @@ cp ${config} ${configdir}
 # Run Snakemake
 # ───────────────────────────────────────────────
 log "INFO" "Running rat-snake pipeline"
-log "INFO" "    Project     : $project_name (v$project_version)"
+log "INFO" "    Project     : $project_name ($project_version)"
 log "INFO" "    Profile     : $profile"
 log "INFO" "    Config file : $config"
 
