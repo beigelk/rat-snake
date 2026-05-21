@@ -55,14 +55,14 @@ rule cellranger_multi:
         echo "OK: deleted SC_MULTI_CS dir in $SCRATCH/{params.outdir}/{wildcards.sample}"
 
         echo "=== Copying results back to submit dir ==="
-        cp -r $SCRATCH/{params.outdir}/{wildcards.sample} $SLURM_SUBMIT_DIR/{params.outdir}/{wildcards.sample}
+        cp -r $SCRATCH/{params.outdir}/{wildcards.sample} $SLURM_SUBMIT_DIR/{params.outdir}
         if [ $? -ne 0 ]; then
             echo "FAILED: could not copy back to $SLURM_SUBMIT_DIR"
             exit 1
         fi
         echo "OK: copied results to $SLURM_SUBMIT_DIR"
 
-        touch {output.touchfile}
+        touch $SLURM_SUBMIT_DIR/{output.touchfile}
 
         echo "=== Cleaning up scratch ==="
         rm -rf $SCRATCH
