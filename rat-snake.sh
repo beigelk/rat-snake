@@ -25,7 +25,7 @@ log() {
 # ───────────────────────────────────────────────
 
 # Parse command-line options
-while getopts ":c:r:p:" opt; do
+while getopts ":c:r:e:" opt; do
     case "$opt" in
         c)
             config="$OPTARG"
@@ -41,13 +41,13 @@ while getopts ":c:r:p:" opt; do
             ;;
         esac
         ;;
-        p)
+        e)
         case "$OPTARG" in
             local|slurm)
-            profile="$OPTARG"
+            executor="$OPTARG"
             ;;
             *)
-            log "ERROR" "Invalid profile option: $OPTARG (allowed: local, slurm)"
+            log "ERROR" "Invalid executor option: $OPTARG (allowed: local, slurm)"
             exit 1
             ;;
         esac
@@ -69,7 +69,7 @@ done
 # ───────────────────────────────────────────────
 config="${config:-}"
 runtype="${runtype:-dry-run}"
-# profile="${profile:-snakemake/profiles/local/}"
+# executor="${executor:-snakemake/executors/local/}"
 
 if [[ -z "${config:-}" ]]; then
     log "ERROR" "Missing -c argument"
@@ -129,7 +129,7 @@ cp ${config} ${configdir}
 # ───────────────────────────────────────────────
 log "INFO" "Running rat-snake pipeline"
 log "INFO" "    Project     : $project_name ($project_version)"
-log "INFO" "    Profile     : $profile"
+log "INFO" "    Executor     : $executor"
 log "INFO" "    Config file : $config"
 
 dryrun_flag=""
@@ -147,7 +147,7 @@ case "$runtype" in
 esac
 
 profile_dir=""
-case "$profile" in
+case "$executor" in
     local)
         profile_dir="snakemake/profiles/local"
         ;;
@@ -160,22 +160,37 @@ case "$profile" in
         ;;
 esac
 
+# # Make .Renviron
+PROJECT_ROOT=$(pwd)
+# RENV_LIB=$(find ${PROJECT_ROOT}/renv/library -maxdepth 3 -mindepth 3 -type d | grep "R-4.5" | head -1)
+
+# cat > .Renviron << EOF
+# RENV_PROJECT=${PROJECT_ROOT}
+# R_LIBS_USER=${RENV_LIB}
+# EOF
+
+# echo "PROJECT_ROOT: ${PROJECT_ROOT}"
+# echo "RENV_LIB: ${RENV_LIB}"
+
+export R_ENVIRON_USER=${PROJECT_ROOT}/.Renviron
+export R_PROFILE_USER=${PROJECT_ROOT}/.Rprofile
+
 # Main
 log "INFO" "Starting rat-snake pipeline in '$runtype' mode"
 
 script -q -e -c "
+
     snakemake \
         --snakefile snakemake/Snakefile \
         --profile '$profile_dir' \
         --configfile '$config' \
         $dryrun_flag \
-        --rerun-triggers mtime \
         --printshellcmds \
-        --use-singularity \
+        --use-envmodules \
         --rerun-incomplete 
     " /dev/null | tee "${logdir}/rat-snake.log"
 
-log "PASS" "sc-rat-snake Snakemake pipeline finished successfully."
+log "PASS" "rat-snake Snakemake pipeline finished successfully."
 
 # clean up
 rm -rf .snakemake/tmp.*
