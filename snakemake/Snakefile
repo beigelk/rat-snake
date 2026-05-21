@@ -301,6 +301,7 @@ include: "workflow/rules/preprocess/rna/doubletfinder.smk"
 include: "workflow/rules/preprocess/adt/dsb.smk"
 include: "workflow/rules/preprocess/multimodal/construct.smk"
 include: "workflow/rules/integrate/merge.smk"
+include: "workflow/rules/integrate/harmony.smk"
 
 rule all:
     input:
@@ -312,5 +313,6 @@ rule all:
         complete_dsb_outputs,
         complete_construct_outputs,
         merged_seurat,
+        harmonized_seurat
 
         
