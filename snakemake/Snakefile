@@ -67,17 +67,17 @@ base_config = load_yaml("snakemake/config/base.yaml")
 
 RULE_IDX = {}
 
-for module, steps in base_config["modules"].items():
+for module, steps in base_config['modules'].items():
     for step in steps:
-        sub = step.get("submodule")
+        sub = step.get('submodule')
 
         key = f"{module}/{sub}/{step['rule']}" if sub else f"{module}/{step['rule']}"
 
-        base_path = Path("workflow/rules") / module
-        script_path = Path("snakemake/workflow/scripts") / module
+        rule_path = Path("workflow/rules") / module
+        script_path = Path("workflow/scripts") / module
 
         if sub:
-            base_path /= sub
+            rule_path /= sub
             script_path /= sub
 
         RULE_IDX[key] = {
@@ -85,9 +85,9 @@ for module, steps in base_config["modules"].items():
             "submodule": sub,
             "rule": step["rule"],
             "type": step["type"],
-            "smk": str(base_path / f"{step['rule']}.smk"),
+            "smk": str(rule_path / f"{step['rule']}.smk"),
             "r": (
-                str(script_path / f"{step['rule']}.R")
+                str(BASE / script_path / f"{step['rule']}.R")
                 if step["type"] == "R"
                 else None
             )
