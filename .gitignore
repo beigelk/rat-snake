@@ -12,3 +12,19 @@ dev/
 
 # ignore Cellrange Martian Runtime objects
 *.mro
+
+# Ignore R env and startup files
+.Renviron
+.Rprofile
+renv/
+
+# Manual items (for dev and testing)
+manual_operations
+
+# Ignore images
+*.pdf
+*.png
+*.qs2
+
+# Ignore MacOS .DS_Store
+.DS_Store
