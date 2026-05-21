@@ -74,6 +74,24 @@ def complete_soupx_outputs(wildcards):
             zip, dataset=datasets, sample=samples
         )
     )
+
+def complete_doubletfinder_outputs(wildcards):
+    complete = get_complete_samples()
+    datasets  = [d for d, s in complete]
+    samples   = [s for d, s in complete]
+
+    base = RES_IDX['preprocess/rna/doubletfinder']['outdir']
+    patterns = [
+        "{dataset}/tables/{sample}_doublet_ids.txt",
+        "{dataset}/figures/{sample}_doublet_pK.pdf",
+        "{dataset}/figures/{sample}_doublet_QC.png",
+    ]
+
+    return [
+        path
+        for pattern in patterns
+        for path in expand(base + pattern, zip, dataset=datasets, sample=samples)
+    ]
 # ==============================================================================
 # BASE PIPELINE CONFIGURATION
 # ==============================================================================
@@ -224,6 +242,7 @@ include: "workflow/rules/setup/samplesheet.smk"
 include: "workflow/rules/cellranger/configs.smk"
 include: "workflow/rules/cellranger/cellranger_multi.smk"
 include: "workflow/rules/preprocess/rna/soupx.smk"
+include: "workflow/rules/preprocess/rna/doubletfinder.smk"
 
 rule all:
     input:
@@ -231,5 +250,6 @@ rule all:
         cellranger_configs,
         complete_cellranger_outputs,
         complete_soupx_outputs,
+        complete_doubletfinder_outputs,
 
         
