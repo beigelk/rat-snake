@@ -1,7 +1,6 @@
 # ==============================================================================
 # IMPORTS
 # ==============================================================================
-
 import os
 import shutil
 from pathlib import Path
@@ -61,10 +60,31 @@ def complete_cellranger_outputs(wildcards):
         sample=[s for d, s in complete]
     )
 
-
-
+# ==============================================================================
+# BASE PIPELINE CONFIGURATION
+# ==============================================================================
 base_config = load_yaml("snakemake/config/base.yaml")
 
+# ==============================================================================
+# PROJECT CONFIGURATION
+# ==============================================================================
+PROJECT_NAME    = config['project_info']['name']
+PROJECT_VERSION = config['project_info']['version']
+PROJECT         = f"{PROJECT_NAME}_{PROJECT_VERSION}"
+
+HOME = os.path.expanduser("~")
+BASE = Path(workflow.basedir)
+# or: HOME = str(Path.home())
+
+TEMP_DIR = os.path.join(HOME, "temp", PROJECT)
+
+DATASETS = list(config['datasets'].keys())
+MODALITIES = ["gex", "csp", "vdj"]
+
+
+# ==============================================================================
+# RULE INDEX
+# ==============================================================================
 RULE_IDX = {}
 
 for module, steps in base_config['modules'].items():
@@ -100,18 +120,8 @@ RULES = [
 
 
 # ==============================================================================
-# PROJECT CONFIGURATION
+# RESULTS INDEX
 # ==============================================================================
-
-PROJECT_NAME    = config['project_info']['name']
-PROJECT_VERSION = config['project_info']['version']
-PROJECT         = f"{PROJECT_NAME}_{PROJECT_VERSION}"
-
-HOME = os.path.expanduser("~")
-# or: HOME = str(Path.home())
-
-TEMP_DIR = os.path.join(HOME, "temp", PROJECT)
-
 RES_IDX = {
     key: {
         "outdir": f"projects/{PROJECT_NAME}/{PROJECT}/results/{meta['module']}/{meta['rule']}/",
@@ -121,8 +131,9 @@ RES_IDX = {
     for key, meta in RULE_IDX.items()
 }
 
-# print(RES_IDX)
-
+# ==============================================================================
+# LOG INDEX
+# ==============================================================================
 LOG_IDX = {
     key: {
         "log": f"projects/{PROJECT_NAME}/{PROJECT}/logs/{meta['module']}/{meta['rule']}/"
@@ -130,67 +141,32 @@ LOG_IDX = {
     for key, meta in RULE_IDX.items()
 }
 
-DATASETS = list(config["datasets"].keys())
-MODALITIES = ["gex", "csp", "vdj"]
 
-# SAMPLES = {}
-# for dataset in config["datasets"]:
-#     with open(config["datasets"][dataset]["sample_ids"]) as f:
-#         print(f)
-#         SAMPLES[dataset] = [x.strip() for x in f if x.strip()]
-
-# SAMPLES = {}
-# for dataset in config["datasets"]:
-#     SAMPLES[dataset] = {m: [] for m in MODALITIES}
-#     with open(config["datasets"][dataset]["sample_ids"]) as f:
-#         reader = csv.DictReader(f, delimiter="\t")
-#         for row in reader:
-#             for modality in MODALITIES:
-#                 value = row[modality].strip()
-#                 if value:
-#                     SAMPLES[dataset][modality].append(value)
-
-
-
-def shared_tokens(sample_names):
-
-    split_names = [s.split("_") for s in sample_names]
-
-    shared = []
-
-    for token in split_names[0]:
-        if all(token in parts for parts in split_names[1:]):
-            if not token.startswith("S"):
-                shared.append(token)
-
-    return "_".join(shared)
-
-
+# ==============================================================================
+# GET ORIGINAL SAMPLE LIST
+# ==============================================================================
 SAMPLES = {}
-
-for dataset in config["datasets"]:
+for dataset in config['datasets']:
 
     SAMPLES[dataset] = {}
-
-    with open(config["datasets"][dataset]["sample_ids"]) as f:
-
+    with open(config['datasets'][dataset]["sample_ids"]) as f:
         reader = csv.DictReader(f, delimiter="\t")
-
         for row in reader:
-
             # collect modality samples
             samples = {
                 m: row[m].strip()
                 for m in MODALITIES
                 if row[m].strip()
             }
-
             # compute shared key
             sample_key = shared_tokens(samples.values())
-
             # store by key (IMPORTANT CHANGE)
             SAMPLES[dataset][sample_key] = samples
 
+
+# ==============================================================================
+# GET LIST OF SAMPLES THAT HAVE ALL THREE MODALITIES
+# ==============================================================================
 COMPLETE_SAMPLES = {
     ds: {
         sk: mods
@@ -200,20 +176,22 @@ COMPLETE_SAMPLES = {
     for ds, samples in SAMPLES.items()
 }
 
+
+# ==============================================================================
+# MODULE OUTPUTS
+# ==============================================================================
+# ----------------------------------------------------
+# Module setup/samplesheet
+# ----------------------------------------------------
 samplesheets = expand(
     RES_IDX['setup/samplesheet']['outdir'] + "samplesheet_{dataset}_{modality}.tsv",
     dataset=DATASETS,
     modality=MODALITIES
 )
 
-
-# cellranger_configs = []
-# for dataset, samples in SAMPLES.items():
-#     for sample in samples:
-#         cellranger_configs.append(
-#             RES_IDX['cellranger/configs']['outdir'] + f"cellranger_configs/{dataset}/{sample}_config.csv"
-#         )
-
+# ----------------------------------------------------
+# Module cellranger/configs
+# ----------------------------------------------------
 cellranger_configs = expand(
     RES_IDX['cellranger/configs']['outdir'] + "{dataset}/configfiles/{sample_key}_config.csv",
     zip,
@@ -221,20 +199,12 @@ cellranger_configs = expand(
     sample_key=[sk for ds in DATASETS for sk in SAMPLES[ds].keys()]
 )
 
-# cellranger_multi_outs = expand(
-#     RES_IDX['cellranger/multi']['outdir'] + "{dataset}/{sample_key}/outs/per_sample_outs/{sample_key}/metrics_summary.csv",
-#     zip,
-#     dataset=[ds for ds in DATASETS for sk in SAMPLES[ds].keys()],
-#     sample_key=[sk for ds in DATASETS for sk in SAMPLES[ds].keys()]
-# )
-cellranger_multi_outs = expand(
-    "{dataset}__{sample_key}__metrics_summary.csv",
-    zip,
-    dataset=[ds for ds in DATASETS for sk in SAMPLES[ds].keys()],
-    sample_key=[sk for ds in DATASETS for sk in SAMPLES[ds].keys()]
-)
+merged_seurat = RES_IDX['integrate/merge']['outdir'] + "objects/merged_seurat.qs2"
+harmonized_seurat = RES_IDX['integrate/harmony']['outdir'] + "objects/harmonized_seurat.qs2"
 
-# print(cellranger_configs)
+# Need to clean up rule names for this, but it would work
+# for rule in RULES:
+#     include: rule
 
 include: "workflow/rules/setup/samplesheet.smk"
 include: "workflow/rules/cellranger/configs.smk"
