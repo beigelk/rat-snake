@@ -110,6 +110,33 @@ def complete_dsb_outputs(wildcards):
         for pattern in patterns
         for path in expand(base + pattern, zip, dataset=datasets, sample=samples)
     ]
+
+def complete_construct_outputs(wildcards):
+    complete = get_complete_samples()
+    datasets = [d for d, s in complete]
+    samples  = [s for d, s in complete]
+
+    base = RES_IDX['preprocess/multimodal/construct']['outdir']
+    patterns = [
+        "{dataset}/objects/{sample}_Seurat.qs2",
+        "{dataset}/tables/{sample}_RNA_filtering_cutoffs.txt",
+        "{dataset}/tables/{sample}_RNA_sig_pcs.txt",
+        "{dataset}/figures/{sample}_Prefilt_QCPlots.pdf",
+        "{dataset}/figures/{sample}_Prefilt_UMAPPlot.png",
+        "{dataset}/figures/{sample}_Prefilt_VlnPlot.png",
+        "{dataset}/figures/{sample}_Prefilt_FeatScatter.png",
+        "{dataset}/figures/{sample}_Postfilt_QCPlots.pdf",
+        "{dataset}/figures/{sample}_Postfilt_UMAPPlot.png",
+        "{dataset}/figures/{sample}_Postfilt_VlnPlot.png",
+        "{dataset}/figures/{sample}_Postfilt_FeatScatter.png",
+    ]
+
+    return [
+        path
+        for pattern in patterns
+        for path in expand(base + pattern, zip, dataset=datasets, sample=samples)
+    ]
+
 # ==============================================================================
 # BASE PIPELINE CONFIGURATION
 # ==============================================================================
@@ -262,6 +289,7 @@ include: "workflow/rules/cellranger/cellranger_multi.smk"
 include: "workflow/rules/preprocess/rna/soupx.smk"
 include: "workflow/rules/preprocess/rna/doubletfinder.smk"
 include: "workflow/rules/preprocess/adt/dsb.smk"
+include: "workflow/rules/preprocess/multimodal/construct.smk"
 
 rule all:
     input:
@@ -271,5 +299,6 @@ rule all:
         complete_soupx_outputs,
         complete_doubletfinder_outputs,
         complete_dsb_outputs,
+        complete_construct_outputs,
 
         
