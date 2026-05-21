@@ -1,14 +1,12 @@
 #!/usr/bin/env bash
 
-RUN_ENV="smk-v9.17.2__r-v4.5.3"
+RUN_ENV="snakemake-v9.17.2"
 
 SMK_V="9.17.2"
-R_V="4.5.3"
 
 REQ_PKGS=(
     "snakemake=${SMK_V}"
     "snakemake-executor-plugin-slurm"
-    "r-base=${R_V}"
     "yq"
 )
 
