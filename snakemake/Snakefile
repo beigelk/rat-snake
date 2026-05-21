@@ -92,6 +92,24 @@ def complete_doubletfinder_outputs(wildcards):
         for pattern in patterns
         for path in expand(base + pattern, zip, dataset=datasets, sample=samples)
     ]
+
+def complete_dsb_outputs(wildcards):
+    complete = get_complete_samples()
+    datasets = [d for d, s in complete]
+    samples  = [s for d, s in complete]
+
+    base = RES_IDX['preprocess/adt/dsb']['outdir']
+    patterns = [
+        "{dataset}/objects/{sample}_dsb.qs2",
+        "{dataset}/figures/{sample}_ADT_ScatterPlot.png",
+        "{dataset}/figures/{sample}_ADT_Heatmap.png",
+    ]
+
+    return [
+        path
+        for pattern in patterns
+        for path in expand(base + pattern, zip, dataset=datasets, sample=samples)
+    ]
 # ==============================================================================
 # BASE PIPELINE CONFIGURATION
 # ==============================================================================
@@ -243,6 +261,7 @@ include: "workflow/rules/cellranger/configs.smk"
 include: "workflow/rules/cellranger/cellranger_multi.smk"
 include: "workflow/rules/preprocess/rna/soupx.smk"
 include: "workflow/rules/preprocess/rna/doubletfinder.smk"
+include: "workflow/rules/preprocess/adt/dsb.smk"
 
 rule all:
     input:
@@ -251,5 +270,6 @@ rule all:
         complete_cellranger_outputs,
         complete_soupx_outputs,
         complete_doubletfinder_outputs,
+        complete_dsb_outputs,
 
         
