@@ -59,6 +59,21 @@ def complete_cellranger_outputs(wildcards):
         sample=[s for d, s in complete]
     )
 
+def complete_soupx_outputs(wildcards):
+    complete = get_complete_samples()
+    datasets  = [d for d, s in complete]
+    samples   = [s for d, s in complete]
+
+    return (
+        expand(
+            RES_IDX['preprocess/rna/soupx']['outdir'] + "{dataset}/objects/soupx__{sample}.qs2",
+            zip, dataset=datasets, sample=samples
+        )
+        + expand(
+            RES_IDX['preprocess/rna/soupx']['outdir'] + "{dataset}/figures/soupx__{sample}.pdf",
+            zip, dataset=datasets, sample=samples
+        )
+    )
 # ==============================================================================
 # BASE PIPELINE CONFIGURATION
 # ==============================================================================
@@ -208,11 +223,13 @@ harmonized_seurat = RES_IDX['integrate/harmony']['outdir'] + "objects/harmonized
 include: "workflow/rules/setup/samplesheet.smk"
 include: "workflow/rules/cellranger/configs.smk"
 include: "workflow/rules/cellranger/cellranger_multi.smk"
+include: "workflow/rules/preprocess/rna/soupx.smk"
 
 rule all:
     input:
         samplesheets,
         cellranger_configs,
         complete_cellranger_outputs,
+        complete_soupx_outputs,
 
         
