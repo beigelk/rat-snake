@@ -137,6 +137,16 @@ def complete_construct_outputs(wildcards):
         for path in expand(base + pattern, zip, dataset=datasets, sample=samples)
     ]
 
+def complete_merge_inputs(wildcards):
+    complete = get_complete_samples()
+    datasets = [d for d, s in complete]
+    samples  = [s for d, s in complete]
+
+    return expand(
+        RES_IDX['preprocess/multimodal/construct']['outdir'] + "{dataset}/objects/{sample}_Seurat.qs2",
+        zip, dataset=datasets, sample=samples
+    )
+
 # ==============================================================================
 # BASE PIPELINE CONFIGURATION
 # ==============================================================================
@@ -290,6 +300,7 @@ include: "workflow/rules/preprocess/rna/soupx.smk"
 include: "workflow/rules/preprocess/rna/doubletfinder.smk"
 include: "workflow/rules/preprocess/adt/dsb.smk"
 include: "workflow/rules/preprocess/multimodal/construct.smk"
+include: "workflow/rules/integrate/merge.smk"
 
 rule all:
     input:
@@ -300,5 +311,6 @@ rule all:
         complete_doubletfinder_outputs,
         complete_dsb_outputs,
         complete_construct_outputs,
+        merged_seurat,
 
         
