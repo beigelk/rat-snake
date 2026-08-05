@@ -489,10 +489,17 @@ COMPLETE_SAMPLES = {
 
 
 # ==============================================================================
+# MODULE INPUTS
+# ==============================================================================
+MARKERS_PAIRS = get_all_pop_resolution_pairs(include_roots=True)
+MARKERS_TARGETS = sorted({t for t, _ in MARKERS_PAIRS})
+
+
+# ==============================================================================
 # MODULE OUTPUTS
 # ==============================================================================
 # ----------------------------------------------------
-# Module setup/samplesheet
+# MODULE setup/samplesheet
 # ----------------------------------------------------
 samplesheets = expand(
     RES_IDX['setup/samplesheet']['outdir'] + "samplesheet_{dataset}_{modality}.tsv",
@@ -501,7 +508,7 @@ samplesheets = expand(
 )
 
 # ----------------------------------------------------
-# Module cellranger/configs
+# MODULE cellranger/configs
 # ----------------------------------------------------
 cellranger_configs = expand(
     RES_IDX['cellranger/configs']['outdir'] + "{dataset}/configfiles/{sample_key}_config.csv",
@@ -510,8 +517,21 @@ cellranger_configs = expand(
     sample_key=[sk for ds in DATASETS for sk in SAMPLES[ds].keys()]
 )
 
+# ----------------------------------------------------
+# MODULE integrate/merge
+# ----------------------------------------------------
 merged_seurat = RES_IDX['integrate/merge']['outdir'] + "objects/merged_seurat.qs2"
+
+# ----------------------------------------------------
+# MODULE integrate/harmony
+# ----------------------------------------------------
 harmonized_seurat = RES_IDX['integrate/harmony']['outdir'] + "objects/harmonized_seurat.qs2"
+
+# ----------------------------------------------------
+# MODULE annotate/metadata
+# ----------------------------------------------------
+metadata_obj = RES_IDX['annotate/metadata']['outdir'] + "objects/metadata.qs2"
+
 
 # Need to clean up rule names for this, but it would work
 # for rule in RULES:
