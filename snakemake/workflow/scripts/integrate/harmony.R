@@ -45,7 +45,10 @@ options(future.globals.maxSize = 200000 * 1024^2)
 
 # source('Rscripts/utils.R', print.eval = FALSE)
 print('functions')
-process_multimodal_seurat = function(multimodal, adt.markers.file) {
+process_multimodal_seurat = function(
+    multimodal,
+    adt.markers.file
+) {
 
     # PREPPING DATA FOR MULTIMODAL OPERATIONS
     # -----------------------------------------------------------------------------------------------
@@ -92,16 +95,15 @@ process_multimodal_seurat = function(multimodal, adt.markers.file) {
     return(multimodal)
 }
 
-harmonize_rna_assay = function(merged.seurat) {
+harmonize_assay = function(
+    merged.seurat,
+    assay.name
+) {
 
     # Running Harmony
     # -----------------------------------------------------------------------------------------------
     # Manually set variable features of merged Seurat object
-    DefaultAssay(merged.seurat) <- 'RNA'
-    # # VariableFeatures(merged.seurat) <- integ.features
-    
-    # # Calculate PCs using manually set variable features
-    # merged.seurat <- RunPCA(merged.seurat, assay = "RNA", npcs = 50)
+    DefaultAssay(merged.seurat) <- assay.name
     
     # Run Harmony to integrate samples
     # By default, harmony will look up the pca cell embeddings and use these to run harmony.
@@ -111,8 +113,8 @@ harmonize_rna_assay = function(merged.seurat) {
     harmonized.seurat = RunHarmony(
         merged.seurat,
         group.by.vars = c("orig.ident"), 
-        reduction = "pca_rna",
-        reduction.save = "harmony_rna"
+        reduction = paste0("pca_", tolower(assay.name)),
+        reduction.save = paste0("harmony_", tolower(assay.name))
         # assay.use = "RNA",
         # plot.convergence = TRUE,
         # max_iter = 100,
@@ -124,106 +126,98 @@ harmonize_rna_assay = function(merged.seurat) {
   return(harmonized.seurat)
 }
 
-harmonize_adt_assay = function(merged.seurat) {
-  
-  # Manually set variable features of merged Seurat object
-  DefaultAssay(merged.seurat) = 'ADT'
-  
-  # Running Harmony
-  # -----------------------------------------------------------------------------------------------
-  # Run Harmony to integrate samples
-  # By default, harmony will look up the pca cell embeddings and use these to run harmony.
-  # Therefore, it assumes that the Seurat object has these embeddings already precomputed.
-  # https://cran.r-project.org/web/packages/harmony/vignettes/Seurat.html
-    set.seed(42)
-    harmonized.seurat = RunHarmony(
-        merged.seurat,
-        group.by.vars = c("orig.ident"), 
-        reduction = "pca_adt",
-        reduction.save = "harmony_adt"
-        # assay.use = "ADT",
-        # plot.convergence = TRUE,
-        # max_iter = 100,
-        # kmeans_init_nstart = 20,
-        # kmeans_init_iter_max = 1000
-    )
-  
-  return(harmonized.seurat)
-}
+run_wnn = function(
+    seurat.obj,
+    rna.dims = ncol(Embeddings(seurat.obj, "harmony_rna")),
+    adt.dims = ncol(Embeddings(seurat.obj, "harmony_adt")),
+    k.nn.val = 20,
+    prune.SNN.val = 1/15,
+    wnn.name = NULL
+) {
 
-run_wnn = function(seurat.obj) {
-    rna_dims = ncol(Embeddings(seurat.obj, "harmony_rna"))
-    adt_dims = ncol(Embeddings(seurat.obj, "harmony_adt"))
     # Run WNN on Harmony reduction
+    # ----------------------------------------------------------------
     seurat.obj = FindMultiModalNeighbors(
         object = seurat.obj,
         reduction.list = list("harmony_rna", "harmony_adt"),
-        knn.graph.name = "wknn_harmony",
-        snn.graph.name = "wsnn_harmony",
-        weighted.nn.name = "weighted.nn_harmony",
-        dims.list = list(1:rna_dims, 1:adt_dims),
+        knn.graph.name = paste0("wknn_harmony", wnn.name),
+        snn.graph.name = paste0("wsnn_harmony", wnn.name),
+        weighted.nn.name = paste0("weighted.nn_harmony", wnn.name),
+        dims.list = list(1:rna.dims, 1:adt.dims),
         modality.weight.name = c("RNA.weight", 'ADT.weight'),
+        k.nn = k.nn.val,
+        prune.SNN = prune.SNN.val,
         verbose = TRUE
     )
+    # ----------------------------------------------------------------
+
+    return(seurat.obj)
 }
 
-run_umap = function(seurat.obj) {
+run_umap = function(
+    seurat.obj,
+    wnn.name = NULL
+) {
     # Run UMAP for the weighted nearest neighbors (using Method 2)
     # ----------------------------------------------------------------
     seurat.obj = RunUMAP(
         seurat.obj,
-        nn.name = "weighted.nn_harmony",
-        reduction.name = "wnn.umap_harmony",
+        nn.name = paste0("weighted.nn_harmony", wnn.name),
+        reduction.name = paste0("wnn.umap_harmony", wnn.name),
         reduction.key = "wnnUMAP_"
     )
     # ----------------------------------------------------------------
+
     return(seurat.obj)
 }
 
-# plot_umaps = function(seurat.obj, anno.col1, anno.col2)
-# {
-#     # PLOT DIMPLOTS OF WNN
-#     # ----------------------------------------------------------------
-#     p1 = DimPlot(
-#         object = seurat.obj,
-#         group.by = anno.col1,
-#         reduction = 'wnn.umap_harmony',
-#         shuffle = TRUE) +
-#     guides(color = guide_legend(override.aes = list(size = 4), ncol = 1))
-
-#     plot_pdf_and_png(
-#         plot = p1,
-#         filename = wnn_umap_basename,
-#         height = 10,
-#         width = 10
-#     )
-#     # ----------------------------------------------------------------
-# }
-
 ###################################################################################
 
+# -- Load Seurat object ---------------------------------------------------------- #
 seu = qs2::qs_read(
     file = merged_seurat
 )
 
+# -- Scale, PCA based on ADT marker list ----------------------------------------- #
 print('scale and pca')
-# Scale, PCA
 seu = process_multimodal_seurat(seu, adt.markers.file = adt_markers_file)
 
-# Run Harmony (via harmony package)
+# -- RNA: Run Harmony (via harmony package) -------------------------------------- #
 print('harmony rna')
-seu = harmonize_rna_assay(seu)
+seu = harmonize_assay(
+    merged.seurat = seu,
+    assay.name = "RNA"
+)
+
+# -- ADT: Run Harmony (via harmony package) -------------------------------------- #
 print('harmony adt')
-seu = harmonize_adt_assay(seu)
+seu = harmonize_assay(
+    merged.seurat = seu,
+    assay.name = "ADT"
+)
 
-# Find multimodal neighbors and calculate wnn
-print('wnn')
-seu = run_wnn(seu)
+# -- Find multimodal neighbors and calculate wnn --------------------------------- #
+print('wnn default')
+seu = run_wnn(
+    seurat.obj = seu,
+    wnn.name = "_default"
+)
 
-# Calculate UMAP from WNN
+# -- Calculate UMAP from WNN ----------------------------------------------------- #
 print('umap')
-seu = run_umap(seu)
-# plot_umaps(seu, anno.col1 = 'orig.ident', anno.col2 = 'seurat_clusters')
+seu = run_umap(seu, wnn.name = "_default")
+
+# -- Find multimodal neighbors and calculate wnn --------------------------------- #
+print('wnn custom')
+seu = run_wnn(
+    seurat.obj = seu,
+    rna.dims = 15,
+    adt.dims = 15,
+    k.nn.val = 10,
+    prune.SNN.val = 1/30
+)
+
+# -- Save object ----------------------------------------------------------------- #
 print('saving')
 qs2::qs_save(
   object = seu,
