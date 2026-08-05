@@ -517,16 +517,30 @@ harmonized_seurat = RES_IDX['integrate/harmony']['outdir'] + "objects/harmonized
 # for rule in RULES:
 #     include: rule
 
+# Set up
 include: "workflow/rules/setup/samplesheet.smk"
+
+# Cell Ranger
 include: "workflow/rules/cellranger/configs.smk"
 include: "workflow/rules/cellranger/cellranger_multi.smk"
+
+# Pre-processing
 include: "workflow/rules/preprocess/rna/soupx.smk"
 include: "workflow/rules/preprocess/rna/doubletfinder.smk"
 include: "workflow/rules/preprocess/adt/dsb.smk"
 include: "workflow/rules/preprocess/multimodal/construct.smk"
+
+# Integration
 include: "workflow/rules/integrate/merge.smk"
 include: "workflow/rules/integrate/harmony.smk"
 
+# Annotation
+include: "workflow/rules/annotate/metadata.smk"
+include: "workflow/rules/annotate/cluster.smk"
+include: "workflow/rules/annotate/subset.smk"
+include: "workflow/rules/annotate/compile.smk"
+include: "workflow/rules/annotate/findallmarkers.smk"
+include: "workflow/rules/annotate/filtermarkers.smk"
 rule all:
     input:
         samplesheets,
