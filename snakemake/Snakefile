@@ -561,6 +561,10 @@ include: "workflow/rules/annotate/subset.smk"
 include: "workflow/rules/annotate/compile.smk"
 include: "workflow/rules/annotate/findallmarkers.smk"
 include: "workflow/rules/annotate/filtermarkers.smk"
+
+# ----------------------------------------------------
+# Rule all
+# ----------------------------------------------------
 rule all:
     input:
         samplesheets,
@@ -571,6 +575,10 @@ rule all:
         complete_dsb_outputs,
         complete_construct_outputs,
         merged_seurat,
-        harmonized_seurat
+        harmonized_seurat,
+        metadata_obj,
+        complete_compile_outputs,
+        complete_findallmarkers_outputs,
+        complete_filtermarkers_outputs
 
         
