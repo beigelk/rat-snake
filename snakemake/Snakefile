@@ -9,6 +9,7 @@ import json
 from itertools import product
 import yaml
 import csv
+import numpy as np
 
 # ==============================================================================
 # Set rules to run locally (slurm not needed)
@@ -147,10 +148,229 @@ def complete_merge_inputs(wildcards):
         zip, dataset=datasets, sample=samples
     )
 
+
+# -- HELPERS -------------------------------------------------
+def expand_resolutions(res_block):
+    """Expand a {from, to, by} dict into a list of resolution values."""
+    return [round(r, 4) for r in np.arange(res_block["from"], res_block["to"] + res_block["by"]/2, res_block["by"])]
+
+def clean_clusters_str(clusters):
+    """Convert '0, 1, 2, 3, 8' or 4 or [0,1,2] -> '0-1-2-3-8' / '4' for safe filenames."""
+    if isinstance(clusters, str):
+        parts = [c.strip() for c in clusters.split(",")]
+    elif isinstance(clusters, (int, float)):
+        parts = [str(clusters)]
+    else:
+        # assume it's already a list/tuple
+        parts = [str(c) for c in clusters]
+    return "-".join(parts)
+
+def parse_clusters_list(clusters):
+    """Convert '0, 1, 2, 3, 8' or 4 or [0,1,2] -> [0, 1, 2, 3, 8] (list of ints)."""
+    if isinstance(clusters, str):
+        return [int(c.strip()) for c in clusters.split(",")]
+    elif isinstance(clusters, (int, float)):
+        return [int(clusters)]
+    else:
+        return [int(c) for c in clusters]
+
+def format_res(value):
+    """Format a resolution float for filenames: trims trailing zeros, no decimal if whole number.
+    0.0 -> '0', 0.1 -> '0.1', 0.07 -> '0.07'"""
+    value = round(float(value), 4)
+    if value == int(value):
+        return str(int(value))
+    return f"{value:g}"
+# ============================================================
+# POPULATIONS
+# ============================================================
+POPULATIONS = {p["name"]: p for p in config['annotate']['populations']}
+
+def is_root(pop_name):
+    return "subset" not in POPULATIONS[pop_name]
+
+def pop_outdir(pop_name, rule_key, subdir):
+    """{RES_DIR}/annotate/populations/{pop_name}/{rule_key}/{subdir}/"""
+    return f"{RES_DIR}/annotate/populations/{pop_name}/{rule_key}/{subdir}/"
+
+def population_resolutions(pop_name):
+    if not isinstance(pop_name, str):
+        raise TypeError(f"population_resolutions() expected a str, got {type(pop_name).__name__}: {pop_name!r}")
+    if pop_name not in POPULATIONS:
+        raise KeyError(f"Unknown population {pop_name!r} — not in POPULATIONS keys: {list(POPULATIONS)}")
+    res_specs = POPULATIONS[pop_name].get("resolutions") or {}
+    resolutions = []
+    for scheme_name, spec in res_specs.items():
+        missing = {"from", "to", "by"} - spec.keys()
+        if missing:
+            raise KeyError(
+                f"Population {pop_name!r}, resolution scheme {scheme_name!r} "
+                f"is missing keys {missing} — got {spec}"
+            )
+        vals = np.arange(spec["from"], spec["to"] + spec["by"] / 2, spec["by"])
+        resolutions.extend(round(float(v), 10) for v in vals)
+    return sorted(set(resolutions))
+
+
+# ============================================================
+# CLUSTER / SUBSET
+# ============================================================
+def cluster_tsv_path(pop_name, resolution):
+    graph_name = POPULATIONS[pop_name]["graph_name"]
+    return pop_outdir(pop_name, "cluster", "tables") + f"cluster__{pop_name}__{graph_name}_res.{format_res(resolution)}.tsv"
+
+def subset_obj_path(pop_name):
+    graph_name = POPULATIONS[pop_name]["graph_name"]
+    return pop_outdir(pop_name, "subset", "objects") + f"subset__{pop_name}__{graph_name}.qs2"
+
+def population_seurat_obj(pop_name):
+    """Object a population is/was clustered on: harmonized_seurat for roots,
+    otherwise its own subset object."""
+    return harmonized_seurat if is_root(pop_name) else subset_obj_path(pop_name)
+
+def population_cluster_outputs(pop_name):
+    return [cluster_tsv_path(pop_name, r) for r in population_resolutions(pop_name)]
+
+def population_cluster_metadata(pop_name):
+    graph_name = POPULATIONS[pop_name]["graph_name"]
+    return [
+        {"pop_name": pop_name, "graph_name": graph_name, "resolution": r, "file": cluster_tsv_path(pop_name, r)}
+        for r in population_resolutions(pop_name)
+    ]
+
+def get_all_pop_resolution_pairs(include_roots=True):
+    """(pop_name, resolution) pairs across all populations."""
+    pairs = []
+    for pop_name in POPULATIONS:
+        if not include_roots and is_root(pop_name):
+            continue
+        for resolution in population_resolutions(pop_name):
+            pairs.append((pop_name, resolution))
+    return pairs
+
+
+# ============================================================
+# COMPILE
+# ============================================================
+def compiled_seurat_input(wc):
+    return pop_outdir(wc.pop_name, "compile", "objects") + wc.pop_name + "_seurat.qs2"
+
+def compile_inputs(wc):
+    return {
+        "target_obj":      population_seurat_obj(wc.pop_name),
+        "cluster_results": population_cluster_outputs(wc.pop_name),
+    }
+
+def complete_compile_outputs(wildcards):
+    return [
+        pop_outdir(pop_name, "compile", "objects") + pop_name + "_seurat.qs2"
+        for pop_name in COMPILE_TARGETS
+    ]
+
+
+# ============================================================
+# FINDALLMARKERS + PLOTS CONFIG — nested per population
+# ============================================================
+def pop_assays(pop_name):
+    return POPULATIONS[pop_name].get("findallmarkers", {}).get("assays", [])
+
+def pop_threshold_sets(pop_name, assay):
+    return POPULATIONS[pop_name]["findallmarkers"]["threshold_sets"][assay]
+
+def pop_threshold_set_names(pop_name, assay):
+    return list(pop_threshold_sets(pop_name, assay).keys())
+
+def pop_threshold_values(pop_name, assay, threshold_set):
+    return pop_threshold_sets(pop_name, assay)[threshold_set]
+
+def pop_marker_set_specs(pop_name, assay):
+    return POPULATIONS[pop_name].get("plots", {}).get("marker_sets", {}).get(assay, {})
+
+def pop_marker_set_names(pop_name, assay):
+    return list(pop_marker_set_specs(pop_name, assay).keys())
+
+def pop_marker_set_spec(pop_name, assay, marker_set):
+    return pop_marker_set_specs(pop_name, assay)[marker_set]
+
+# Aggregated across all populations — only used for wildcard_constraints regexes.
+# Actual valid combinations are enforced by the target-generator functions below,
+# which only ever iterate real per-population entries.
+ALL_ASSAYS = sorted({a for p in POPULATIONS for a in pop_assays(p)})
+ALL_THRESHOLD_SET_NAMES = sorted({
+    t for p in POPULATIONS for a in pop_assays(p) for t in pop_threshold_set_names(p, a)
+})
+ALL_MARKER_SET_NAMES = sorted({
+    m for p in POPULATIONS for a in pop_assays(p) for m in pop_marker_set_names(p, a)
+})
+
+
+# ============================================================
+# FINDALLMARKERS (raw tables, per pop/resolution/assay)
+# ============================================================
+def markers_raw_tsv_path(pop_name, resolution, assay):
+    return (pop_outdir(pop_name, "findallmarkers", "tables/raw") +
+        f"{PROJECT}__{pop_name}__{assay}_res.{format_res(resolution)}__markers_raw.tsv")
+
+def get_marker_table_triples():
+    return [
+        (pop_name, resolution, assay)
+        for pop_name in POPULATIONS
+        for resolution in population_resolutions(pop_name)
+        for assay in pop_assays(pop_name)
+    ]
+
+MARKER_TABLE_TRIPLES = get_marker_table_triples()
+
+def findallmarkers_prefix(wc):
+    return f"{PROJECT}__{wc.pop_name}__{wc.assay}_res.{wc.resolution}"
+
+def complete_findallmarkers_outputs(wildcards):
+    return [markers_raw_tsv_path(p, r, a) for p, r, a in MARKER_TABLE_TRIPLES]
+
+
+# ============================================================
+# FILTERMARKERS (filtered tables, per pop/resolution/assay/threshold_set)
+# ============================================================
+def markers_filtered_tsv_path(pop_name, resolution, assay, threshold_set):
+    return (pop_outdir(pop_name, "findallmarkers", "tables/filtered") +
+        f"{PROJECT}__{pop_name}__{assay}_res.{format_res(resolution)}__{threshold_set}__markers_filtered.tsv")
+
+def get_filtered_marker_quads():
+    return [
+        (pop_name, resolution, assay, threshold_set)
+        for pop_name, resolution, assay in MARKER_TABLE_TRIPLES
+        for threshold_set in pop_threshold_set_names(pop_name, assay)
+    ]
+
+FILTERED_MARKER_QUADS = get_filtered_marker_quads()
+
+def filtermarkers_prefix(wc):
+    return f"{PROJECT}__{wc.pop_name}__{wc.assay}_res.{wc.resolution}_{wc.threshold_set}"
+
+def complete_filtermarkers_outputs(wildcards):
+    return [markers_filtered_tsv_path(p, r, a, t) for p, r, a, t in FILTERED_MARKER_QUADS]
+
+
+# ============================================================
+# WILDCARD CONSTRAINTS (single consolidated block)
+# ============================================================
+wildcard_constraints:
+    pop_name      = "|".join(POPULATIONS.keys()),
+    graph_name    = "|".join({p["graph_name"] for p in POPULATIONS.values()}),
+    resolution    = r"\d+\.?\d*",
+    assay         = "|".join(ALL_ASSAYS),
+    threshold_set = "|".join(ALL_THRESHOLD_SET_NAMES),
+    marker_set    = "|".join(ALL_MARKER_SET_NAMES),
+
 # ==============================================================================
 # BASE PIPELINE CONFIGURATION
 # ==============================================================================
 base_config = load_yaml("snakemake/config/base.yaml")
+
+wildcard_constraints:
+    pop_name   = "|".join(POPULATIONS.keys()),
+    graph_name = "|".join({p["graph_name"] for p in POPULATIONS.values()}),
+    resolution = r"\d+\.?\d*",
 
 # ==============================================================================
 # PROJECT CONFIGURATION
@@ -163,7 +383,10 @@ HOME = os.path.expanduser("~")
 BASE = Path(workflow.basedir)
 # or: HOME = str(Path.home())
 
-TEMP_DIR = os.path.join(HOME, "temp", PROJECT)
+RES_DIR   = f"projects/{PROJECT_NAME}/{PROJECT}/results"
+LOG_DIR   = f"projects/{PROJECT_NAME}/{PROJECT}/.logs"
+DEBUG_DIR = f"projects/{PROJECT_NAME}/{PROJECT}/.debug"
+TEMP_DIR  = os.path.join(HOME, "temp", PROJECT)
 
 DATASETS = list(config['datasets'].keys())
 MODALITIES = ["gex", "csp", "vdj"]
@@ -211,7 +434,8 @@ RULES = [
 # ==============================================================================
 RES_IDX = {
     key: {
-        "outdir": f"projects/{PROJECT_NAME}/{PROJECT}/results/{meta['module']}/{meta['rule']}/",
+        "rootdir": f"{RES_DIR}/{meta['module']}/",
+        "outdir": f"{RES_DIR}/{meta['module']}/{meta['rule']}/",
         "module": meta["module"],
         "rule": meta["rule"],
     }
@@ -223,7 +447,7 @@ RES_IDX = {
 # ==============================================================================
 LOG_IDX = {
     key: {
-        "log": f"projects/{PROJECT_NAME}/{PROJECT}/logs/{meta['module']}/{meta['rule']}/"
+        "log": f"{LOG_DIR}/{meta['module']}/{meta['rule']}/"
     }
     for key, meta in RULE_IDX.items()
 }
