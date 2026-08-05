@@ -28,9 +28,25 @@ modules:
       type: R
     - rule: harmony
       type: R
-  # preprocess/tcr:
-  #   - rule: add_tcr
-  #     type: R
+
+  annotate:
+    - rule: metadata
+      type: R
+    - rule: cluster
+      type: R
+    - rule: subset
+      type: R
+    - rule: compile
+      type: R
+    - rule: findallmarkers
+      type: R
+    - rule: filtermarkers
+      type: R
+    - rule: dotplot
+      type: R
+    - rule: comboplot
+      type: R
+  
   utils:
     - rule: collect_web_summaries
       type: shell
