@@ -563,6 +563,15 @@ include: "workflow/rules/annotate/findallmarkers.smk"
 include: "workflow/rules/annotate/filtermarkers.smk"
 
 # ----------------------------------------------------
+# Save the config info
+# ----------------------------------------------------
+config_log = Path(f"projects/{PROJECT_NAME}/{PROJECT}/configs/parsed/configfile.yaml")
+config_log.parent.mkdir(parents=True, exist_ok=True)
+
+with open(config_log, "w") as f:
+    yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+
+# ----------------------------------------------------
 # Rule all
 # ----------------------------------------------------
 rule all:
