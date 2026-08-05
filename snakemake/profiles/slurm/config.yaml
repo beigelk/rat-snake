@@ -24,6 +24,7 @@ set-threads:
   cellranger_multi: 16
   construct: 16
   merge: 34
+  cluster: 32
 
 set-resources:
   cellranger_multi:
@@ -32,82 +33,76 @@ set-resources:
     time: 24:00:00
     cpus_per_task: 16
     cellranger_jobs: 1
+
   soupx:
     mem_mb: 64000
     runtime: 4:00:00
     time: 4:00:00
     cpus_per_task: 4
     soupx_jobs: 1
+
   doubletfinder:
     mem_mb: 64000
     runtime: 4:00:00
     time: 4:00:00
     cpus_per_task: 4
     doubletfinder_jobs: 1
+
   dsb:
     mem_mb: 30000
     runtime: 2:00:00
     time: 2:00:00
     cpus_per_task: 2
     dsb_jobs: 1
+
   construct:
     mem_mb: 64000
     runtime: 4:00:00
     time: 4:00:00
     cpus_per_task: 16
     construct_jobs: 1
+
   merge:
     mem_mb: 480000
     runtime: 8:00:00
     time: 8:00:00
     cpus_per_task: 16
     merge_jobs: 1
+
   harmony:
     mem_mb: 480000
     runtime: 8:00:00
     time: 8:00:00
     cpus_per_task: 16
-    merge_jobs: 1
     
+  metadata:
+    mem_mb: 200000
+    runtime: 2:00:00
+    time: 2:00:00
+    cpus_per_task: 2
 
-# executor: slurm
-# jobs: 100
-# latency-wait: 60
-# rerun-incomplete: true
-# printshellcmds: true
+  cluster:
+    mem_mb: 200000
+    runtime: 2:00:00
+    time: 2:00:00
+    cpus_per_task: 4
 
-# resources:
-#   cellranger_jobs: 10
+  subset:
+    mem_mb: 100000
+    runtime: 2:00:00
+    time: 2:00:00
+    cpus_per_task: 4
 
-# default-resources:
-#   slurm_account: "hpcusers"
-#   slurm_partition: "defq"
-#   mem_mb: 8000
-#   runtime: 60
-#   tasks: 1
-
-# set-threads:
-#   cellranger_multi: 20
-
-# set-resources:
-#   cellranger_multi:
-#     mem_mb: 64000
-#     time: 24:00:00
-#     # runtime: 5:00:00
-#     cellranger_jobs: 1
-
-# # Default cluster command for job submission
-# cluster: "sbatch --time={resources.time} --mem={resources.mem_mb} --cpus-per-task={threads} --partition={resources.partition}"
-
-# # Default resources if not specified in Snakefile
-# default-resources:
-#   time: "24:00:00"
-#   mem_mb: 64000
-#   threads: 16
-#   partition: "standard"
-
-# # Other profile options
-# jobs: 10
-# latency-wait: 60
-# rerun-incomplete: true
-# use-conda: true
+  compile:
+    mem_mb: 200000
+    runtime: 2:00:00
+    time: 2:00:00
+    cpus_per_task: 4
+  
+  findallmarkers:
+    mem_mb: "attempt * 100000"
+    runtime: "attempt * 120"
+    time: "attempt * 60"
+    cpus_per_task: 2
+    retries: 3
+    
