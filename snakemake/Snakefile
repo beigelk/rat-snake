@@ -454,6 +454,21 @@ LOG_IDX = {
 
 
 # ==============================================================================
+# SNAKEMAKE OBJ (FOR DEBUGGING) INDEX
+# ==============================================================================
+DEBUG_IDX = {
+    key: {
+        "debug": f"{DEBUG_DIR}/{meta['module']}/{meta['rule']}/"
+    }
+    for key, meta in RULE_IDX.items()
+}
+
+# Make dirs for debug objs
+for entry in DEBUG_IDX.values():
+    os.makedirs(entry["debug"], exist_ok=True)
+
+
+# ==============================================================================
 # GET ORIGINAL SAMPLE LIST
 # ==============================================================================
 SAMPLES = {}
