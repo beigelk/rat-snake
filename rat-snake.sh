@@ -23,53 +23,55 @@ log() {
 # ───────────────────────────────────────────────
 # Parse input arguments
 # ───────────────────────────────────────────────
-
-# Parse command-line options
-while getopts ":c:r:e:" opt; do
-    case "$opt" in
-        c)
-            config="$OPTARG"
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -c|--config)
+            config="$2"
+            shift 2
             ;;
-        r)
-        case "$OPTARG" in
-            run|dry-run)
-            runtype="$OPTARG"
+        -r|--runtype)
+            case "$2" in
+                run|dry-run)
+                    runtype="$2"
+                    ;;
+                *)
+                    log "ERROR" "Invalid mode: $2 (allowed: run, dry-run)"
+                    exit 1
+                    ;;
+            esac
+            shift 2
             ;;
-            *)
-            log "ERROR" "Invalid runtype option: $OPTARG (allowed: run, dry-run)"
-            exit 1
+        -e|--executor)
+            case "$2" in
+                local|slurm)
+                    executor="$2"
+                    ;;
+                *)
+                    log "ERROR" "Invalid executor: $2 (allowed: local, slurm)"
+                    exit 1
+                    ;;
+            esac
+            shift 2
             ;;
-        esac
-        ;;
-        e)
-        case "$OPTARG" in
-            local|slurm)
-            executor="$OPTARG"
+        --)
+            shift
+            break
             ;;
-            *)
-            log "ERROR" "Invalid executor option: $OPTARG (allowed: local, slurm)"
-            exit 1
-            ;;
-        esac
-        ;;
-        \?)
-            log "ERROR" "Invalid option: -$OPTARG"
-            echo "Usage: $0 -c <config.yaml> -r <dry-run|run>"
-            exit 1
-            ;;
-        :)
-            log "ERROR" "Option -$OPTARG requires an argument"
-            exit 1
+        *)
+            break
             ;;
     esac
 done
+
+# Everything remaining gets passed to snakemake
+snakemake_args=("$@")
 
 # ───────────────────────────────────────────────
 # Validate input
 # ───────────────────────────────────────────────
 config="${config:-}"
 runtype="${runtype:-dry-run}"
-# executor="${executor:-snakemake/executors/local/}"
+executor="${executor:-local}"
 
 if [[ -z "${config:-}" ]]; then
     log "ERROR" "Missing -c argument"
@@ -114,25 +116,24 @@ project="${project_name}_${project_version}"
 # ───────────────────────────────────────────────
 # Make log dir
 # ───────────────────────────────────────────────
-logdir="projects/${project_name}/${project}/logs"
-mkdir -p ${logdir}
+logdir="projects/${project_name}/${project}/.logs"
+mkdir -p "${logdir}"
 
 # ───────────────────────────────────────────────
 # Make config dir
 # ───────────────────────────────────────────────
 configdir="projects/${project_name}/${project}/configs"
-mkdir -p ${configdir}
-cp ${config} ${configdir}
+mkdir -p "${configdir}/input"
+cp "${config}" "${configdir}/input"
 
 # ───────────────────────────────────────────────
 # Run Snakemake
 # ───────────────────────────────────────────────
 log "INFO" "Running rat-snake pipeline"
-log "INFO" "    Project     : $project_name ($project_version)"
+log "INFO" "    Project      : $project_name ($project_version)"
 log "INFO" "    Executor     : $executor"
-log "INFO" "    Config file : $config"
+log "INFO" "    Config file  : $config"
 
-dryrun_flag=""
 case "$runtype" in
     run)
         dryrun_flag=""
@@ -146,7 +147,6 @@ case "$runtype" in
         ;;
 esac
 
-profile_dir=""
 case "$executor" in
     local)
         profile_dir="snakemake/profiles/local"
@@ -155,44 +155,41 @@ case "$executor" in
         profile_dir="snakemake/profiles/slurm"
         ;;
     *)
-        log "ERROR" "Unknown runtype: $runtype (allowed: local, slurm)"
+        log "ERROR" "Unknown executor: $executor (allowed: local, slurm)"
         exit 1
         ;;
 esac
 
-# # Make .Renviron
 PROJECT_ROOT=$(pwd)
-# RENV_LIB=$(find ${PROJECT_ROOT}/renv/library -maxdepth 3 -mindepth 3 -type d | grep "R-4.5" | head -1)
-
-# cat > .Renviron << EOF
-# RENV_PROJECT=${PROJECT_ROOT}
-# R_LIBS_USER=${RENV_LIB}
-# EOF
-
-# echo "PROJECT_ROOT: ${PROJECT_ROOT}"
-# echo "RENV_LIB: ${RENV_LIB}"
-
 export R_ENVIRON_USER=${PROJECT_ROOT}/.Renviron
 export R_PROFILE_USER=${PROJECT_ROOT}/.Rprofile
 
-# Main
+export FLEXIBLAS=NETLIB
+
+# ───────────────────────────────────────────────
+# Build and run snakemake via temp script
+# ───────────────────────────────────────────────
 log "INFO" "Starting rat-snake pipeline in '$runtype' mode"
+log "INFO" "Passing the following additional flags to Snakemake: ${snakemake_args[@]}"
 
-script -q -e -c "
+tmp_script=$(mktemp /tmp/rat-snake-XXXXXX.sh)
+trap 'rm -f "$tmp_script"' EXIT
 
-    snakemake \
-        --snakefile snakemake/Snakefile \
-        --profile '$profile_dir' \
-        --configfile '$config' \
-        $dryrun_flag \
-        --printshellcmds \
-        --use-envmodules \
-        --rerun-incomplete 
-    " /dev/null | tee "${logdir}/rat-snake.log"
+cat > "$tmp_script" << EOF
+#!/bin/bash
+snakemake \\
+    --snakefile snakemake/Snakefile \\
+    --profile '$profile_dir' \\
+    --configfile '$config' \\
+    ${dryrun_flag:+--dry-run} \\
+    --printshellcmds \\
+    --use-envmodules \\
+    ${snakemake_args[@]+"${snakemake_args[@]}"}
+EOF
+
+script -q -e -c "bash '$tmp_script'" /dev/null | tee "${logdir}/rat-snake.log"
 
 log "PASS" "rat-snake Snakemake pipeline finished successfully."
 
 # clean up
 rm -rf .snakemake/tmp.*
-
-    
