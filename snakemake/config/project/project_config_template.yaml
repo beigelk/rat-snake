@@ -10,16 +10,229 @@ datasets:
       gex: /user/data/dataset1/GEX/fastq
       csp: /user/data/dataset1/CSP/fastq
       vdj: /user/data/dataset1/VDJ/fastq
+    metadata:
+      input:
+        name: dataset1
+        file: input/metadata/dataset1_metadata.xlsx
+        sheet: Sheet1
+        id_col: Sample name
+        cols: [
+          Sample name, Age, Sex, Condition
+        ]
+        nrows: 40
 
-  HTS_SO243:
+  dataset2:
     sample_ids: /user/data/dataset2/metadata/sample_ids.tsv
     filetype: fastq.gz
     input_dirs:
       gex: /user/data/dataset2/fastq
       csp: /user/data/dataset2/fastq
       vdj: /user/data/dataset2/fastq
+    metadata:
+      input:
+        name: dataset1
+        file: input/metadata/dataset2_metadata.xlsx
+        sheet: Sheet1
+        id_col: Sample name
+        cols: [
+          Sample name, Age, Sex, Condition
+        ]
+        nrows: 20
 
 cellranger:
   gex_reference: /user/references/cellranger_ref/refdata-gex-GRCh38-2024-A
   csp_reference: /user/references/csp_reference/feature_reference.csv
   vdj_reference: /user/references/cellranger_ref/refdata-cellranger-vdj-GRCh38-alts-ensembl-7.1.0
+
+
+# -- PREPROCESSING ---------------------------------------------------------------------------------------------------------------------------- #
+preprocess:
+  
+  # RNA 
+  rna:
+    soupx:
+      npcs: 50
+      resolution: 0.8
+    doubletfinder:
+      min_feat_cutoff: 400
+      max_feat_cutoff: auto
+      percent_mt_cutoff: 15
+  
+  # ADT
+  adt:
+    dsb:
+
+  # TCR
+  tcr:
+    clones:
+
+  # MULTIMODAL
+  multimodal:
+    construct:
+      rna:
+        rna_min_feat_cutoff: 400
+        rna_max_feat_cutoff: auto
+        rna_percent_mt_cutoff: 15
+      adt:
+        adt_feat_min: 70
+        adt_isocount_max: 200
+
+# -- INTEGRATION ------------------------------------------------------------------------------------------------------------------------------ #
+integrate:
+  # HARMONY
+  harmony:
+    adt_markers_file: input/reference/adt_features_of_interest.txt
+
+# -- METADATA ------------------------------------------------------------------------------------------------------------------------------ #
+annotate:
+  metadata:
+    plots:
+      umap:
+        defaults:
+          width: 12
+          height: 8
+          reduction: wnn.umap_harmony
+        plots:
+          - group_var: Dataset
+          - group_var: Sample_ID
+          - group_var: Condition
+            split_var: Dataset
+          - group_var: Sample_ID
+            split_var: Dataset
+          - group_var: Sample_ID
+            split_var: Dataset
+            subset_var: Dataset
+            subset_val: dataset2
+            width: 16
+            height: 10
+          - group_var: Sample_ID
+            split_var: Dataset
+            subset_var: Dataset
+            subset_val: dataset1
+            width: 16
+            height: 10
+
+      feature_stat:
+        features: [nCount_RNA, nFeature_RNA, nCount_ADT, nFeature_ADT, percent_mt, IsoCount]
+        defaults:
+          width: 20
+          height: 8
+        plots:
+          - plot_type: violin
+            group_var: Sample_ID
+          - plot_type: ridge
+            group_var: Sample_ID
+            width: 10
+            height: 12
+          - plot_type: violin
+            group_var: Sample_ID
+            subset_var: Dataset
+            subset_val: dataset2
+
+  # -- Dataset clustering + subsetting + subclustering -----------------------------------
+  populations:
+
+    - name: main
+      graph_name: wsnn_harmony
+      resolutions:
+        fine: {from: 0.05, to: 0.07, by: 0.01}
+      findallmarkers:
+        assays: [RNA, ADT]
+        threshold_sets:
+          RNA:
+            default: {lfc_threshold: 0.25, padj_threshold: 0.05, pct1_threshold: 0.1}
+          ADT:
+            default: {lfc_threshold: 4,    padj_threshold: 0.05, pct1_threshold: 0.5}
+      plots:
+          marker_sets:
+            RNA:
+              top5_default:        {type: topn,     threshold_set: default,  top_n: 5}
+              top10_default:       {type: topn,     threshold_set: default,  top_n: 10}
+              markers_epithelial:  {type: genelist, file: input/markers/markers_epithelial.txt}
+              markers_lymphocytes: {type: genelist, file: input/markers/markers_lymphocytes.txt}
+              markers_myeloid:     {type: genelist, file: input/markers/markers_myeloid.txt}
+              markers_fibroblast:  {type: genelist, file: input/markers/markers_fibroblast.txt}
+            ADT:
+              top5_default:        {type: topn,     threshold_set: default,  top_n: 5}
+              top10_default:       {type: topn,     threshold_set: default,  top_n: 10}
+              adt_markers:         {type: genelist, file: input/reference/adt_features_of_interest.txt}
+
+    - name: epithelial
+      graph_name: wsnn_harmony
+      subset:
+        base_name: main
+        base_resolution: 0.07
+        base_clusters: 0, 1, 2, 3, 8
+      resolutions:
+        fine: {from: 0, to: 2, by: 0.2}
+      findallmarkers:
+        assays: [RNA, ADT]
+        threshold_sets:
+          RNA:
+            default: {lfc_threshold: 0.25, padj_threshold: 0.05, pct1_threshold: 0.1}
+          ADT:
+            default: {lfc_threshold: 4,    padj_threshold: 0.05, pct1_threshold: 0.5}
+      plots:
+        marker_sets:
+          RNA:
+            top5_default:                 {type: topn,     threshold_set: default,  top_n: 5}
+            top10_default:                {type: topn,     threshold_set: default,  top_n: 10}
+            markers_epithelial_diff_high: {type: genelist, file: input/markers/markers_epithelial_diff_high.txt}
+            markers_epithelial_diff_low:  {type: genelist, file: input/markers/markers_epithelial_diff_low.txt}
+            markers_epithelial_quiescent: {type: genelist, file: input/markers/markers_epithelial_quiescent.txt}
+          ADT:
+            top5_default:        {type: topn,     threshold_set: default,  top_n: 5}
+            top10_default:       {type: topn,     threshold_set: default,  top_n: 10}
+            adt_markers:         {type: genelist, file: input/reference/adt_features_of_interest.txt}
+
+    - name: lymphocytes
+      graph_name: wsnn_harmony
+      subset:
+        base_name: main
+        base_resolution: 0.07
+        base_clusters: 4
+      resolutions:
+        fine: {from: 0, to: 2, by: 0.2}
+      findallmarkers:
+        assays: [RNA, ADT]
+        threshold_sets:
+          RNA:
+            default: {lfc_threshold: 0.25, padj_threshold: 0.05, pct1_threshold: 0.1}
+          ADT:
+            default: {lfc_threshold: 4,    padj_threshold: 0.05, pct1_threshold: 0.5}
+      plots:
+        marker_sets:
+          RNA:
+            top5_default:        {type: topn,     threshold_set: default,  top_n: 5}
+            top10_default:       {type: topn,     threshold_set: default,  top_n: 10}
+            markers_lymphocytes: {type: genelist, file: input/markers/lymphocyte_markers.txt}
+          ADT:
+            top5_default:        {type: topn,     threshold_set: default,  top_n: 5}
+            top10_default:       {type: topn,     threshold_set: default,  top_n: 10}
+            adt_markers:         {type: genelist, file: input/reference/adt_features_of_interest.txt}
+
+    - name: CD8s 
+      graph_name: wsnn_harmony
+      subset:
+        base_name: lymphocytes
+        base_resolution: 1.2
+        base_clusters: 7
+      resolutions:
+        fine: {from: 0, to: 2, by: 0.2}
+      findallmarkers:
+        assays: [RNA, ADT]
+        threshold_sets:
+          RNA:
+            default: {lfc_threshold: 0.25, padj_threshold: 0.05, pct1_threshold: 0.1}
+          ADT:
+            default: {lfc_threshold: 4,    padj_threshold: 0.05, pct1_threshold: 0.5}
+      plots:
+        marker_sets:
+          RNA:
+            top5_default:        {type: topn,     threshold_set: default,  top_n: 5}
+            top10_default:       {type: topn,     threshold_set: default,  top_n: 10}
+            markers_epithelial:  {type: genelist, file: input/markers/markers_epithelial.txt}
+          ADT:
+            top5_default:        {type: topn,     threshold_set: default,  top_n: 5}
+            top10_default:       {type: topn,     threshold_set: default,  top_n: 10}
+            adt_markers:         {type: genelist, file: input/reference/adt_features_of_interest.txt}
