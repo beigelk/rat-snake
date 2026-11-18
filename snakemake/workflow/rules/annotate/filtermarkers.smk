@@ -1,7 +1,7 @@
 def filtermarkers_prefix(wc):
     return f"{PROJECT}__{wc.pop_name}__{wc.assay}_res.{wc.resolution}_{wc.threshold_set}"
 
-rule filtermarkers:
+checkpoint filtermarkers:
     input:
         raw_tsv = lambda wc: markers_raw_tsv_path(wc.pop_name, wc.resolution, wc.assay)
     params:
@@ -14,7 +14,7 @@ rule filtermarkers:
         prefix         = filtermarkers_prefix,
         r_library      = config['resources']['r_library'],
         smk_obj        = DEBUG_IDX['annotate/findallmarkers']['debug'] +
-            "filtermarkers__{pop_name}__{assay}_res.{resolution}_{threshold_set}.rds"
+            "filtermarkers__{pop_name}__{assay}_res.{resolution}__{threshold_set}.rds"
     output:
         filtered_tsv = pop_outdir("{pop_name}", "findallmarkers", "tables/filtered") +
             f"{PROJECT}__{{pop_name}}__{{assay}}_res.{{resolution}}__{{threshold_set}}__markers_filtered.tsv"
@@ -22,6 +22,6 @@ rule filtermarkers:
         "R/4.5.3"
     log:
         logfile = LOG_IDX['annotate/findallmarkers']['log'] +
-            "filtermarkers__{pop_name}__{assay}_res.{resolution}_{threshold_set}.log"
+            "filtermarkers__{pop_name}__{assay}_res.{resolution}__{threshold_set}.log"
     script:
         RULE_IDX['annotate/filtermarkers']['r']

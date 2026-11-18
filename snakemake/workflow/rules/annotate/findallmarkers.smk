@@ -1,7 +1,7 @@
 def findallmarkers_prefix(wc):
     return f"{PROJECT}__{wc.pop_name}__{wc.assay}_res.{wc.resolution}"
 
-rule findallmarkers:
+checkpoint findallmarkers:
     input:
         seurat_obj = compiled_seurat_input
     params:

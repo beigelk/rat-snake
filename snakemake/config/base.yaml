@@ -46,7 +46,17 @@ modules:
       type: R
     - rule: comboplot
       type: R
+    
+  visualization:
+    - rule: dotplot
+      type: R
+    - rule: markerplots
+      type: R
   
   utils:
     - rule: collect_web_summaries
       type: shell
+
+  report:
+    - rule: cluster_report
+      type: Rmd

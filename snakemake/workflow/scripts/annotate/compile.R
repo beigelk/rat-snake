@@ -63,7 +63,7 @@ sapply(
 # -- PARSE JSON ------------------------------ #
 cluster_meta = fromJSON(cluster_meta_json)
 drop_cols <- paste0(
-    'cluster__', cluster_meta$run_name,
+    'cluster__', cluster_meta$pop_name,
     '__', cluster_meta$graph_name,
     '_res.', cluster_meta$resolution
 )

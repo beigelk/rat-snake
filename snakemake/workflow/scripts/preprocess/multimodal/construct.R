@@ -60,6 +60,13 @@ library(cowplot)
 set.seed(42)
 options(future.globals.maxSize = 40000 * 1024^2)
 
+# -- SOURCE SCRIPTS ------------------------- #
+sapply(
+    paste0('snakemake/workflow/scripts/utils/', c('utils.R', 'file_io.R', 'plot.R')),
+    source,
+    print.eval = FALSE
+)
+
 
 # -- FUNCTIONS ------------------------------ #
 filter_rna_assay = function(
@@ -288,8 +295,8 @@ add_dsb_seurat = function(seurat.obj, adt.dsb) {
 
     # Get the common cells between the Seurat object and the dsb data
     cells = intersect(
-        colnames(seurat.obj),
-        colnames(dsb.out$cells.dsb.norm$dsb_normalized_matrix)
+      colnames(seurat.obj),
+      colnames(dsb.out$cells.dsb.norm$dsb_normalized_matrix)
     )
 
     dsb.norm.mat = dsb.out$cells.dsb.norm$dsb_normalized_matrix[, cells]
@@ -343,14 +350,28 @@ filter_adt_assay = function(seurat.obj, min.feat.cutoff, max.iso.cutoff) {
   
 }
 
-process_adt_assay = function(seurat.obj) {
+process_adt_assay = function(seurat.obj, norm.method = "CLR") {
   # ADT PRE-PROCESSING
-  # Seurat multimodal with adaptations for DSB-normalized data
-  # notice the normalization is excluded here, that's because the data has
-  # already been normalized with DSB.
-  # https://github.com/satijalab/seurat/issues/3890
-  # !!! Do not normalize here (dsb did that) !!!
-  
+
+  # CLR vs DSB normalization
+  log_msg(sprintf("Normalization method selected: %s", norm.method), level =  'INFO')
+  if (norm.method == "CLR") {
+  log_msg(sprintf("Running NormalizeDate() in Seurat (norm.method=%s)", norm.method), level =  'INFO')
+    seurat.obj <- NormalizeData(
+      seurat.obj,
+      assay = "ADT",
+      normalization.method = "CLR",
+      margin = 2
+    )
+  } else if (norm.method == "dsb") {
+    # Seurat multimodal with adaptations for DSB-normalized data
+    # notice the normalization is excluded here, that's because the data has
+    # already been normalized with DSB.
+    # https://github.com/satijalab/seurat/issues/3890
+    # !!! Do not normalize here (dsb did that) !!!
+    log_msg(sprintf("NOT running normalization (norm.method=%s)", norm.method), level =  'INFO')
+
+  }
     DefaultAssay(seurat.obj) = 'ADT'
     seurat.obj = FindVariableFeatures(seurat.obj, verbose = TRUE)
 

@@ -165,14 +165,26 @@ def clean_clusters_str(clusters):
         parts = [str(c) for c in clusters]
     return "-".join(parts)
 
+# def parse_clusters_list(clusters):
+#     """Convert '0, 1, 2, 3, 8' or 4 or [0,1,2] -> [0, 1, 2, 3, 8] (list of ints)."""
+#     if isinstance(clusters, str):
+#         return [int(c.strip()) for c in clusters.split(",")]
+#     elif isinstance(clusters, (int, float)):
+#         return [int(clusters)]
+#     else:
+#         return [int(c) for c in clusters]
 def parse_clusters_list(clusters):
-    """Convert '0, 1, 2, 3, 8' or 4 or [0,1,2] -> [0, 1, 2, 3, 8] (list of ints)."""
+    """Convert '0, 1, 2, 3, 8' or 4 or [0,1,2] -> [0, 1, 2, 3, 8] (list of ints).
+    Special case: 'all' passes through unchanged, meaning 'keep every cluster'."""
+    if isinstance(clusters, str) and clusters.strip().lower() == "all":
+        return "all"
     if isinstance(clusters, str):
         return [int(c.strip()) for c in clusters.split(",")]
     elif isinstance(clusters, (int, float)):
         return [int(clusters)]
     else:
         return [int(c) for c in clusters]
+
 
 def format_res(value):
     """Format a resolution float for filenames: trims trailing zeros, no decimal if whole number.
@@ -181,6 +193,7 @@ def format_res(value):
     if value == int(value):
         return str(int(value))
     return f"{value:g}"
+
 # ============================================================
 # POPULATIONS
 # ============================================================
@@ -329,26 +342,125 @@ def complete_findallmarkers_outputs(wildcards):
 
 
 # ============================================================
+# CHECKPOINT FOR VALID RESOLUTIONS
+# ============================================================
+def has_markers(tsv_path):
+    """True if the raw marker table has >=1 data row beyond the header."""
+    with open(tsv_path) as f:
+        next(f, None)          # skip header
+        return next(f, None) is not None
+
+def get_valid_marker_triples():
+    """Force evaluation of the findallmarkers checkpoint for every triple,
+    then keep only those whose raw table actually has markers."""
+    valid = []
+    for pop_name, resolution, assay in MARKER_TABLE_TRIPLES:
+        ck = checkpoints.findallmarkers.get(
+            pop_name=pop_name, resolution=format_res(resolution), assay=assay
+        )
+        raw_path = ck.output.raw_tsv
+        if has_markers(raw_path):
+            valid.append((pop_name, resolution, assay))
+    return valid
+
+def get_valid_filtered_quads():
+    """Force evaluation of the filtermarkers checkpoint for every quad whose
+    raw table was non-empty, then keep only those whose filtered table
+    actually has rows surviving the thresholds."""
+    valid = []
+    for pop_name, resolution, assay in get_valid_marker_triples():
+        for threshold_set in pop_threshold_set_names(pop_name, assay):
+            ck = checkpoints.filtermarkers.get(
+                pop_name=pop_name, resolution=format_res(resolution),
+                assay=assay, threshold_set=threshold_set
+            )
+            filtered_path = ck.output.filtered_tsv
+            if has_markers(filtered_path):
+                valid.append((pop_name, resolution, assay, threshold_set))
+    return valid
+
+def complete_filtermarkers_outputs(wildcards):
+    return [markers_filtered_tsv_path(p, r, a, t)
+            for p, r, a, t in get_valid_filtered_quads()]
+
+
+
+# ============================================================
 # FILTERMARKERS (filtered tables, per pop/resolution/assay/threshold_set)
 # ============================================================
 def markers_filtered_tsv_path(pop_name, resolution, assay, threshold_set):
     return (pop_outdir(pop_name, "findallmarkers", "tables/filtered") +
         f"{PROJECT}__{pop_name}__{assay}_res.{format_res(resolution)}__{threshold_set}__markers_filtered.tsv")
 
+# def get_filtered_marker_quads():
+#     return [
+#         (pop_name, resolution, assay, threshold_set)
+#         for pop_name, resolution, assay in MARKER_TABLE_TRIPLES
+#         for threshold_set in pop_threshold_set_names(pop_name, assay)
+#     ]
+
+# FILTERED_MARKER_QUADS = get_filtered_marker_quads()
+
+# def filtermarkers_prefix(wc):
+#     return f"{PROJECT}__{wc.pop_name}__{wc.assay}_res.{wc.resolution}_{wc.threshold_set}"
+
+# def complete_filtermarkers_outputs(wildcards):
+#     return [markers_filtered_tsv_path(p, r, a, t) for p, r, a, t in FILTERED_MARKER_QUADS]
+
 def get_filtered_marker_quads():
     return [
         (pop_name, resolution, assay, threshold_set)
-        for pop_name, resolution, assay in MARKER_TABLE_TRIPLES
+        for pop_name, resolution, assay in get_valid_marker_triples()
         for threshold_set in pop_threshold_set_names(pop_name, assay)
     ]
 
-FILTERED_MARKER_QUADS = get_filtered_marker_quads()
-
-def filtermarkers_prefix(wc):
-    return f"{PROJECT}__{wc.pop_name}__{wc.assay}_res.{wc.resolution}_{wc.threshold_set}"
-
 def complete_filtermarkers_outputs(wildcards):
-    return [markers_filtered_tsv_path(p, r, a, t) for p, r, a, t in FILTERED_MARKER_QUADS]
+    return [markers_filtered_tsv_path(p, r, a, t)
+            for p, r, a, t in get_filtered_marker_quads()]
+
+# ============================================================
+# PLOTS (per pop/resolution/assay/marker_set — topn or genelist)
+# ============================================================
+def get_plot_combos():
+    combos = []
+    for pop_name in POPULATIONS:
+        for resolution in population_resolutions(pop_name):
+            for assay in pop_assays(pop_name):
+                for marker_set in pop_marker_set_names(pop_name, assay):
+                    combos.append((pop_name, resolution, assay, marker_set))
+    return combos
+
+PLOT_COMBOS = get_plot_combos()
+
+def plots_input(wc):
+    spec = pop_marker_set_spec(wc.pop_name, wc.assay, wc.marker_set)
+    inputs = {"seurat_obj": compiled_seurat_input(wc)}
+    if spec["type"] == "topn":
+        inputs["features_file"] = markers_filtered_tsv_path(
+            wc.pop_name, wc.resolution, wc.assay, spec["threshold_set"]
+        )
+    elif spec["type"] == "genelist":
+        inputs["features_file"] = spec["file"]
+    else:
+        raise ValueError(f"Unknown marker_set type: {spec['type']}")
+    return inputs
+
+def plot_prefix(wc):
+    return f"{PROJECT}__{wc.pop_name}__{wc.assay}_res.{wc.resolution}_{wc.marker_set}"
+
+def complete_dotplot_outputs(wildcards):
+    return [
+        pop_outdir(p, "plots", "dotplot") +
+        f"{PROJECT}__{p}__{a}_res.{format_res(r)}__{m}__dotplot.done"
+        for p, r, a, m in PLOT_COMBOS
+    ]
+
+def complete_markerplots_outputs(wildcards):
+    return [
+        pop_outdir(p, "plots", "markerplots") +
+        f"{PROJECT}__{p}__{a}_res.{format_res(r)}__{m}__umap+violin+feature.done"
+        for p, r, a, m in PLOT_COMBOS
+    ]
 
 
 # ============================================================
@@ -419,6 +531,11 @@ for module, steps in base_config['modules'].items():
             "r": (
                 str(BASE / script_path / f"{step['rule']}.R")
                 if step["type"] == "R"
+                else None
+            ),
+            "rmd": (
+                str(BASE / script_path / f"{step['rule']}.Rmd")
+                if step["type"] == "Rmd"
                 else None
             )
         }
@@ -506,8 +623,8 @@ COMPLETE_SAMPLES = {
 # ==============================================================================
 # MODULE INPUTS
 # ==============================================================================
-MARKERS_PAIRS = get_all_pop_resolution_pairs(include_roots=True)
-MARKERS_TARGETS = sorted({t for t, _ in MARKERS_PAIRS})
+# MARKERS_PAIRS = get_all_pop_resolution_pairs(include_roots=True)
+# MARKERS_TARGETS = sorted({t for t, _ in MARKERS_PAIRS})
 
 
 # ==============================================================================
@@ -577,6 +694,9 @@ include: "workflow/rules/annotate/compile.smk"
 include: "workflow/rules/annotate/findallmarkers.smk"
 include: "workflow/rules/annotate/filtermarkers.smk"
 
+# Visualizations
+include: "workflow/rules/visualization/plots.smk"
+
 # ----------------------------------------------------
 # Save the config info
 # ----------------------------------------------------
@@ -594,15 +714,16 @@ rule all:
         samplesheets,
         cellranger_configs,
         complete_cellranger_outputs,
-        complete_soupx_outputs,
-        complete_doubletfinder_outputs,
-        complete_dsb_outputs,
-        complete_construct_outputs,
-        merged_seurat,
-        harmonized_seurat,
-        metadata_obj,
-        complete_compile_outputs,
-        complete_findallmarkers_outputs,
-        complete_filtermarkers_outputs
+        # complete_soupx_outputs,
+        # complete_doubletfinder_outputs,
+        # complete_dsb_outputs,
+        # complete_construct_outputs,
+        # merged_seurat,
+        # harmonized_seurat,
+        # metadata_obj,
+        # complete_compile_outputs,
+        # complete_findallmarkers_outputs,
+        # complete_filtermarkers_outputs,
+        # complete_dotplot_outputs
 
         

@@ -5,7 +5,7 @@ rerun-incomplete: true
 printshellcmds: true
 
 resources:
-  cellranger_jobs: 10
+  cellranger_jobs: 24
   soupx_jobs: 24
   doubletfinder_jobs: 24
   dsb_jobs: 24
