@@ -1,0 +1,18 @@
+# R software for the doubletfinder rule. Env and image: rat-preprocess-doublet.
+# DoubletFinder 2.0.6 is only built for R 4.5 on conda-forge.
+name: rat-preprocess-doublet
+channels:
+  - conda-forge
+  - bioconda
+  - nodefaults
+dependencies:
+  - r-base=4.5
+  - r-seurat>=5.1
+  - r-seuratobject
+  - r-qs2
+  - r-doubletfinder=2.0.6
+  - bioconductor-glmgampoi
+  - r-tidyverse
+  - r-cowplot
+  - r-rcartocolor
+  - r-future

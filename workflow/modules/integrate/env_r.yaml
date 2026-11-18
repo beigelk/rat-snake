@@ -1,0 +1,14 @@
+# R software for the integrate module (merge, Harmony, WNN).
+# Env and image: rat-integrate-r.
+name: rat-integrate-r
+channels:
+  - conda-forge
+  - bioconda
+  - nodefaults
+dependencies:
+  - r-base=4.5
+  - r-seurat=5.5
+  - r-seuratobject
+  - r-harmony
+  - r-qs2
+  - r-tidyverse

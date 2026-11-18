@@ -1,49 +1,42 @@
+###############################################################################
+# Rule:     dsb
+# Purpose:  Normalise and denoise one sample's ADT counts with dsb
+#
+# Description:
+#   Unchanged analysis: empty drops are background barcodes with
+#   log10 ADT counts in (1.5, 3) and log10 RNA counts < 2.5; cells within
+#   3 MADs of the median RNA and ADT library sizes with mitochondrial
+#   proportion < 0.14 are kept; DSBNormalizeProtein with isotype controls;
+#   then CITE clusters, UMAP and a heatmap of median dsb values per cluster.
+#   Every threshold is now an option under preprocess.dsb (same defaults).
+#
+# Inputs:   snakemake@params$raw_matrix, $filtered_matrix (Cell Ranger multi)
+# Outputs:  adt_dsb (qs2 list: seurat, cells.dsb.norm, cellmd), adt_scat_png,
+#           adt_heatmap_png, summary (TSV: sample, dsb_cells, background_drops)
+###############################################################################
 
-# -- SNAKEMAKE VARIABLES ------------------- #
-# input
-filt_path = snakemake@input[['filt_path']]
-raw_path  = snakemake@input[['raw_path']]
+source(file.path(Sys.getenv("SNAKE_CORE"), "R", "snake_init.R"))
+smk <- snake_init(snakemake)
 
-# params
-r_library   = snakemake@params[['r_library']]
-sample_name = snakemake@params[['sample_name']]
+suppressPackageStartupMessages({
+  library(dsb)
+  library(Seurat)
+  library(qs2)
+  library(tidyverse)
+  library(ggplot2)
+})
 
-# output
-adt_dsb         = snakemake@output[['adt_dsb']]
-adt_scat_png    = snakemake@output[['adt_scat_png']]
-adt_heatmap_png = snakemake@output[['adt_heatmap_png']]
 
-# log
-logfile = snakemake@log[1][[1]]
-
-# -- SET LIBRARY PATH ----------------------- #
-.libPaths(r_library)
-
-# -- SET UP LOG ----------------------------- #
-log <- file(logfile, open = "wt")
-sink(log, type = "output")
-sink(log, type = "message")
-
-# -- LOAD PACKAGES ------------------------- #
-# analysis
-library(dsb)
-library(Seurat)
-
-# utility
-library(qs2)
-
-# plotting
-library(tidyverse)
-library(ggplot2)
-
-# -- ENVIRONMENT SETTINGS ------------------- #
-set.seed(42)
-options(future.globals.maxSize = 1500 * 1024^2)
-
-# -- FUNCTIONS ------------------------------ #
-# Normalizing and denoising CITE-seq (ADT) data
-run_dsb = function(raw.path, filt.path)
-{  
+#' Normalise and denoise ADT counts with dsb
+#'
+#' @param raw.path,filt.path Character. Cell Ranger raw and filtered matrix folders.
+#' @param opts List. preprocess.dsb options (thresholds and isotype pattern).
+#' @param mt.pattern Character. Regex for mitochondrial genes.
+#' @param scat.png,heatmap.png Character. Output figures.
+#'
+#' @return List: `seurat`, `cells.dsb.norm` (DSBNormalizeProtein output with
+#'   stats), `cellmd` (droplet QC of kept cells), `n_background`.
+run_dsb <- function(raw.path, filt.path, opts, mt.pattern, scat.png, heatmap.png) {  
     # read raw data using the Seurat function "Read10X_h5"
     raw = Seurat::Read10X(data.dir = raw.path)
     cells = Seurat::Read10X(data.dir = filt.path)
@@ -57,7 +50,7 @@ run_dsb = function(raw.path, filt.path)
     rna = raw$`Gene Expression`
 
     # create metadata of droplet QC stats used in standard scRNAseq processing
-    mtgene = grep(pattern = "^MT-", rownames(rna), value = TRUE) # used below
+    mtgene = grep(pattern = mt.pattern, rownames(rna), value = TRUE) # used below
 
     md = data.frame(
         rna.size = log10(Matrix::colSums(rna)), 
@@ -72,7 +65,7 @@ run_dsb = function(raw.path, filt.path)
     # remove barcodes with no evidence of capture in the experiment
     md = md[md$rna.size > 0 & md$prot.size > 0, ]
 
-    png(file = adt_scat_png, height = 6, width = 10, res = 300, units = 'in')
+    png(file = scat.png, height = 6, width = 10, res = 300, units = 'in')
     print(
         ggplot(md, aes(x = log10(n.gene), y = prot.size)) +
         theme_bw() + 
@@ -83,9 +76,9 @@ run_dsb = function(raw.path, filt.path)
     dev.off()
 
     background_drops = rownames(
-        md[ md$prot.size > 1.5 & 
-            md$prot.size < 3 & 
-            md$rna.size < 2.5, ]
+        md[ md$prot.size > opts$background_prot_min &
+            md$prot.size < opts$background_prot_max &
+            md$rna.size < opts$background_rna_max, ]
     ) 
     background.adt.mtx = as.matrix(prot[ , background_drops])
 
@@ -93,8 +86,8 @@ run_dsb = function(raw.path, filt.path)
     cellmd = md[md$drop.class == 'cell', ]
 
     # filter drops with + / - 3 median absolute deviations from the median library size
-    rna.mult = (3*mad(cellmd$rna.size))
-    prot.mult = (3*mad(cellmd$prot.size))
+    rna.mult = (opts$mad_cutoff * mad(cellmd$rna.size))
+    prot.mult = (opts$mad_cutoff * mad(cellmd$prot.size))
     rna.lower = median(cellmd$rna.size) - rna.mult
     rna.upper = median(cellmd$rna.size) + rna.mult
     prot.lower = median(cellmd$prot.size) - prot.mult
@@ -106,17 +99,15 @@ run_dsb = function(raw.path, filt.path)
                 cellmd$prot.size < prot.upper & 
                 cellmd$rna.size > rna.lower & 
                 cellmd$rna.size < rna.upper & 
-                cellmd$mt.prop < 0.14, ]
+                cellmd$mt.prop < opts$max_mt_prop, ]
     )
-
-    length(qc_cells)
 
     cell.adt.raw = as.matrix(prot[ , qc_cells])
     cell.rna.raw = rna[ ,qc_cells]
     cellmd = cellmd[qc_cells, ]
 
     # define isotype controls 
-    isotype.controls = rownames(prot)[grep('Isotype', rownames(prot))]
+    isotype.controls = rownames(prot)[grep(opts$isotype_pattern, rownames(prot))]
 
     # normalize and denoise with dsb with 
     cells.dsb.norm = DSBNormalizeProtein(
@@ -144,7 +135,7 @@ run_dsb = function(raw.path, filt.path)
     s[["CITE"]] = CreateAssayObject(data = cells.dsb.norm$dsb_normalized_matrix)
 
     # define proteins to use in clustering (non-isotype controls)
-    prots = rownames(s@assays$CITE)[!grepl('Isotype', rownames(prot))]
+    prots = rownames(s@assays$CITE)[!grepl(opts$isotype_pattern, rownames(prot))]
 
     DefaultAssay(s) = 'CITE'
 
@@ -192,21 +183,31 @@ run_dsb = function(raw.path, filt.path)
         tibble::remove_rownames() %>% 
         tibble::column_to_rownames("CITE_snn_res.1")
 
-    png(file = adt_heatmap_png, height = 15, width = 8, res = 300, units = 'in')
+    png(file = heatmap.png, height = 15, width = 8, res = 300, units = 'in')
     # plot a heatmap of the average dsb normalized values for each cluster
     pheatmap::pheatmap(t(adt_plot), 
                         color = viridis::viridis(25, option = "B"), 
                         fontsize_row = 8, border_color = NA)
     dev.off()
 
-    dsb_output = list(s, cells.dsb.norm, cellmd) %>% setNames(c('seurat', 'cells.dsb.norm', 'cellmd'))
-
-    qs2::qs_save(
-        object = dsb_output,
-        file = adt_dsb
-    )
-  
+    log_message(sprintf("dsb: %d cells kept, %d background drops, %d isotype controls",
+                        length(qc_cells), length(background_drops), length(isotype.controls)), "INFO")
+    list(seurat = s, cells.dsb.norm = cells.dsb.norm, cellmd = cellmd,
+         n_background = length(background_drops))
 }
 
-# -- MAIN ----------------------------------------- #
-run_dsb(raw.path = raw_path, filt.path = filt_path)
+# -- MAIN ----------------------------------------------------------------------
+res <- run_dsb(
+  raw.path    = smk@params$raw_matrix,
+  filt.path   = smk@params$filtered_matrix,
+  opts        = smk@params$opts,
+  mt.pattern  = smk@params$mt_pattern,
+  scat.png    = smk@output$adt_scat_png,
+  heatmap.png = smk@output$adt_heatmap_png
+)
+qs2::qs_save(object = res[c("seurat", "cells.dsb.norm", "cellmd")], file = smk@output$adt_dsb)
+write.table(
+  data.frame(sample = smk@wildcards$sample, dsb_cells = nrow(res$cellmd), background_drops = res$n_background),
+  smk@output$summary, sep = "\t", quote = FALSE, row.names = FALSE
+)
+log_message("dsb done", "DONE")

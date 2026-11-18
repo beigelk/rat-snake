@@ -1,0 +1,23 @@
+# R software for the preprocess module: SoupX, dsb, scRepertoire (TCR) and
+# the per-sample Seurat objects. Env and image: rat-preprocess-r.
+# R 4.4: dsb 2.0.1 and scRepertoire 2.2 are only built for R 4.4 on
+# conda-forge/bioconda. DoubletFinder (R 4.5 only) has its own env_doublet.yaml.
+name: rat-preprocess-r
+channels:
+  - conda-forge
+  - bioconda
+  - nodefaults
+dependencies:
+  - r-base=4.4
+  - r-seurat>=5.1
+  - r-seuratobject
+  - r-qs2
+  - r-soupx=1.6.2
+  - r-dsb=2.0.1
+  - bioconductor-screpertoire=2.2
+  - bioconductor-glmgampoi
+  - r-tidyverse
+  - r-cowplot
+  - r-patchwork
+  - r-pheatmap
+  - r-viridis
