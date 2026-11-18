@@ -1,0 +1,10 @@
+# R software for the Cell Ranger metrics table. Env and image: rat-cellranger-r.
+# Cell Ranger itself is not on conda: see cellranger.path and
+# software.envmodules.cellranger in the config.
+name: rat-cellranger-r
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  - r-base=4.5
+  - r-tidyverse
