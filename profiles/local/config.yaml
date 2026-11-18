@@ -1,0 +1,20 @@
+# Run on this machine. Cell Ranger's threads and memory come from the config
+# (cellranger.threads, cellranger.mem_gb); the *_jobs resources cap how many
+# memory-hungry jobs run at once.
+cores: 40
+latency-wait: 60
+rerun-incomplete: true
+printshellcmds: true
+
+resources:
+  cellranger_jobs: 1
+  soupx_jobs: 3
+  doubletfinder_jobs: 3
+  dsb_jobs: 3
+  construct_jobs: 2
+  merge_jobs: 1
+
+set-threads:
+  construct: 8
+  merge: 16
+  cluster: 8

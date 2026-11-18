@@ -1,0 +1,20 @@
+# R software for the annotate module: sample metadata, clonotypes
+# (scRepertoire), clustering, subsetting, markers and clustree.
+# Env and image: rat-annotate-r. R 4.4 because scRepertoire 2.2 needs it.
+name: rat-annotate-r
+channels:
+  - conda-forge
+  - bioconda
+  - nodefaults
+dependencies:
+  - r-base=4.4
+  - r-seurat>=5.1
+  - r-seuratobject
+  - r-qs2
+  - r-tidyverse
+  - r-jsonlite
+  - r-readxl
+  - r-openxlsx
+  - r-stringdist
+  - r-clustree
+  - bioconductor-screpertoire=2.2

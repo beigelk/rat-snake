@@ -1,0 +1,20 @@
+# R software for the visualization module (metadata UMAPs, dot plots,
+# marker plots). Env and image: rat-visualization-r.
+# scplotter and plotthis are only on CRAN: env_r.post.R installs them
+# (envs/create_module_envs.sh and the image build both run it).
+name: rat-visualization-r
+channels:
+  - conda-forge
+  - bioconda
+  - nodefaults
+dependencies:
+  - r-base=4.5
+  - r-seurat=5.5
+  - r-seuratobject
+  - r-qs2
+  - r-tidyverse
+  - r-sccustomize
+  - bioconductor-complexheatmap
+  - r-jcolors
+  - r-patchwork
+  - r-remotes
