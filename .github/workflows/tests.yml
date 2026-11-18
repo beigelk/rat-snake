@@ -1,0 +1,22 @@
+# Unit tests, the rule-docs check and dry runs of the synthetic project.
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -el {0}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-name: rat-tests
+          create-args: python=3.11 snakemake=9.17.2 pandas pyyaml jsonschema numpy pytest
+      - run: bash tests/run_tests.sh
