@@ -1,0 +1,97 @@
+# Submit jobs to SLURM. Needs snakemake-executor-plugin-slurm (installed by
+# envs/conda_setup.sh). Edit account and partition for your cluster.
+# Cell Ranger's threads and memory come from the config (cellranger.threads,
+# cellranger.mem_gb); its runtime is set here.
+executor: slurm
+jobs: 100
+latency-wait: 60
+rerun-incomplete: true
+printshellcmds: true
+
+resources:
+  cellranger_jobs: 24
+  soupx_jobs: 24
+  doubletfinder_jobs: 24
+  dsb_jobs: 24
+  construct_jobs: 24
+  merge_jobs: 1
+
+default-resources:
+  slurm_account: "hpcusers"
+  slurm_partition: "defq"
+  mem_mb: 8000
+  runtime: 60
+  ntasks: 1
+  cpus_per_task: 1
+
+set-threads:
+  construct: 16
+  merge: 34
+  cluster: 32
+
+set-resources:
+  cellranger_multi:
+    runtime: 24h
+  soupx:
+    mem_mb: 64000
+    runtime: 4h
+    cpus_per_task: 4
+  doubletfinder:
+    mem_mb: 64000
+    runtime: 4h
+    cpus_per_task: 4
+  dsb:
+    mem_mb: 30000
+    runtime: 2h
+    cpus_per_task: 2
+  tcr_clones:
+    mem_mb: 16000
+    runtime: 1h
+  construct:
+    mem_mb: 64000
+    runtime: 4h
+    cpus_per_task: 16
+  merge:
+    mem_mb: 480000
+    runtime: 8h
+    cpus_per_task: 16
+  harmony:
+    mem_mb: 480000
+    runtime: 8h
+    cpus_per_task: 16
+  metadata:
+    mem_mb: 200000
+    runtime: 2h
+    cpus_per_task: 2
+  cluster:
+    mem_mb: 200000
+    runtime: 2h
+    cpus_per_task: 4
+  subset:
+    mem_mb: 100000
+    runtime: 2h
+    cpus_per_task: 4
+  compile:
+    mem_mb: 200000
+    runtime: 2h
+    cpus_per_task: 4
+  findallmarkers:
+    # Grows with each retry (the rule retries twice)
+    mem_mb: "attempt * 100000"
+    runtime: "attempt * 120"
+    cpus_per_task: 2
+  clustree:
+    mem_mb: 100000
+    runtime: 2h
+  metadata_plots:
+    mem_mb: 200000
+    runtime: 4h
+  dotplot:
+    mem_mb: 100000
+    runtime: 1h
+  markerplots:
+    mem_mb: 100000
+    runtime: 2h
+  build_report:
+    mem_mb: 8000
+    runtime: 1h

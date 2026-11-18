@@ -1,0 +1,302 @@
+# JSON Schema for config.yaml. Snakemake checks the config against this file
+# at start-up (workflow/Snakefile) and fills in the defaults below, so every
+# option is documented here once.
+$schema: "https://json-schema.org/draft/2020-12/schema"
+description: rat-snake configuration
+type: object
+required: [project, datasets, cellranger]
+
+properties:
+  project:
+    type: object
+    required: [name]
+    properties:
+      name: {type: string, description: "Project name; outputs go to {output_root}/{name}_{version}"}
+      version: {type: string, default: "v0.1.0"}
+      output_root: {type: string, default: "output", description: "Folder that holds every project's outputs"}
+
+  seed: {type: integer, default: 42, description: "Random seed set at the start of every R script"}
+  debug:
+    type: boolean
+    default: false
+    description: >
+      Save each R job's Snakemake object to {output}/debug/<module>/<job>.rds,
+      so the script can be re-run by hand (see README, 'Debugging')
+
+  modules:
+    type: array
+    items: {type: string, enum: [setup, cellranger, preprocess, integrate, annotate, visualization, report]}
+    default: [setup, cellranger, preprocess, integrate, annotate, visualization, report]
+    description: Modules to run. They always run in pipeline order, and each needs the one before it.
+
+  modalities:
+    type: array
+    items: {type: string, enum: [gex, csp, vdj]}
+    default: [gex, csp, vdj]
+    description: >
+      Libraries every sample must have (gene expression, cell surface protein,
+      V(D)J). A sample missing one is left out and listed in
+      results/setup/sample_status.tsv. Drop vdj to run without TCR data.
+
+  software:
+    type: object
+    default: {}
+    properties:
+      mode:
+        type: string
+        enum: [conda, conda_yaml, container, none]
+        default: conda
+        description: >
+          conda = named per-module envs from envs/create_module_envs.sh;
+          conda_yaml = Snakemake builds envs from each env file;
+          container = Singularity/Apptainer images; none = use the active env
+      env_prefix: {type: string, default: rat, description: "Env and image names are {env_prefix}-{module}[-{variant}]"}
+      conda_envs: {type: object, default: {}, description: "Override the env name per module env, e.g. {preprocess-r: my-env}"}
+      registry: {type: string, default: "ghcr.io/OWNER", description: "Where GitHub Actions pushes the images"}
+      image_tag: {type: string, default: latest}
+      images: {type: object, default: {}, description: "Override the image per module env, e.g. {annotate-r: /path/to/image.sif}"}
+      bind: {type: array, items: {type: string}, default: [], description: "Extra folders to bind into containers (data, references)"}
+      gpu: {type: boolean, default: false}
+      envmodules:
+        type: object
+        default: {}
+        description: >
+          Environment modules for software conda cannot provide, by tool, e.g.
+          {cellranger: [CellRanger/9.0.1]}. When set, the controller adds
+          --use-envmodules.
+      r_library:
+        type: [string, "null"]
+        default: null
+        description: "Extra R library put first on .libPaths() in every R script (e.g. a renv library)"
+
+  r_options:
+    type: object
+    default: {}
+    properties:
+      future_globals_gb: {type: number, default: 200, description: "future.globals.maxSize in GB for every R script"}
+
+  datasets:
+    type: object
+    minProperties: 1
+    additionalProperties:
+      type: object
+      required: [sample_ids, input_dirs]
+      properties:
+        enabled: {type: boolean, default: true}
+        sample_ids:
+          type: string
+          description: >
+            Tab-separated table, one row per sample, columns gex, csp, vdj with
+            each library's FASTQ sample name and an optional sample column
+            (the sample's name; otherwise the parts the library names share)
+        filetype: {type: string, default: "fastq.gz", description: "FASTQ file extension"}
+        input_dirs:
+          type: object
+          description: "FASTQ folder per modality ({gex: dir, csp: dir, vdj: dir}); may be the same folder"
+        metadata:
+          type: [object, "null"]
+          default: null
+          description: "Sample metadata spreadsheet for this dataset (see annotate.metadata)"
+          properties:
+            name: {type: string, description: "Value of the Dataset column; default the dataset key"}
+            file: {type: string, description: ".xlsx/.xls, or .csv/.tsv"}
+            sheet: {type: [string, integer], default: 1}
+            id_col: {type: string, description: "Column matched to the sample names"}
+            cols: {type: array, items: {type: string}, description: "Columns to add to the cell metadata"}
+            nrows: {type: [integer, "null"], default: null, description: "Read only this many rows"}
+            levels: {type: object, default: {}, description: "Factor level order per column, e.g. {Condition: [Control, Treated]}"}
+
+  cellranger:
+    type: object
+    required: [gex_reference]
+    properties:
+      gex_reference: {type: string, description: "Cell Ranger GEX reference folder"}
+      csp_reference: {type: string, description: "Feature reference CSV (antibodies)"}
+      vdj_reference: {type: string, description: "Cell Ranger V(D)J reference folder"}
+      path:
+        type: [string, "null"]
+        default: null
+        description: "cellranger executable; default: on PATH or from software.envmodules.cellranger"
+      create_bam: {type: boolean, default: false}
+      check_library_compatibility: {type: boolean, default: false}
+      lanes: {type: string, default: any}
+      scratch_dir:
+        type: [string, "null"]
+        default: null
+        description: >
+          Run Cell Ranger here and copy the results back (e.g.
+          /scr1/users/$USER). Environment variables are expanded; each job
+          gets its own subfolder. null runs in the output folder.
+      keep_sc_multi_cs: {type: boolean, default: false, description: "Keep Cell Ranger's large SC_MULTI_CS folder"}
+      threads: {type: integer, default: 16}
+      mem_gb: {type: integer, default: 64}
+      existing_outs:
+        type: object
+        default: {}
+        description: >
+          Use finished Cell Ranger multi runs instead of running Cell Ranger
+          (for debugging and for re-using earlier runs). A sample found here is
+          never re-run. Each path is a run folder (holding outs/) or its outs/.
+        properties:
+          root:
+            type: [string, "null"]
+            default: null
+            description: "Folder searched for {root}/{dataset}/{sample} and {root}/{sample}"
+          samples:
+            type: object
+            default: {}
+            description: "Run folder per sample, keyed by sample or dataset/sample; overrides root"
+
+  preprocess:
+    type: object
+    default: {}
+    properties:
+      mt_pattern: {type: string, default: "^MT-", description: "Regex for mitochondrial genes (mouse: ^mt-)"}
+      soupx:
+        type: object
+        default: {}
+        properties:
+          npcs: {type: integer, default: 50}
+          resolution: {type: number, default: 0.8}
+      doubletfinder:
+        type: object
+        default: {}
+        description: Cells are pre-filtered with these cutoffs before doublets are called
+        properties:
+          min_feat_cutoff: {type: number, default: 400}
+          max_feat_cutoff: {type: [number, string], default: auto, description: "Number, or auto = median + 3 MAD"}
+          percent_mt_cutoff: {type: number, default: 15}
+          pN: {type: number, default: 0.25}
+          workers: {type: integer, default: 4, description: "future workers for paramSweep"}
+      dsb:
+        type: object
+        default: {}
+        properties:
+          background_prot_min: {type: number, default: 1.5, description: "Empty drops: log10 ADT counts above this"}
+          background_prot_max: {type: number, default: 3}
+          background_rna_max: {type: number, default: 2.5, description: "Empty drops: log10 RNA counts below this"}
+          mad_cutoff: {type: number, default: 3, description: "Cells kept within this many MADs of median library size"}
+          max_mt_prop: {type: number, default: 0.14}
+          isotype_pattern: {type: string, default: "Isotype"}
+      tcr:
+        type: object
+        default: {}
+        properties:
+          enabled: {type: boolean, default: true, description: "Add scRepertoire clonotypes (needs vdj in modalities)"}
+          clone_call: {type: string, enum: [gene, nt, aa, strict], default: strict, description: "scRepertoire cloneCall"}
+          remove_na: {type: boolean, default: false}
+          remove_multi: {type: boolean, default: false}
+          filter_multi: {type: boolean, default: false}
+          proportion: {type: boolean, default: true, description: "combineExpression: clone size as a proportion (scRepertoire default) or a count"}
+          clone_size_bins:
+            type: [object, "null"]
+            default: null
+            description: >
+              Upper bound of each cloneSize bin, e.g. {Single: 1, Small: 5,
+              Medium: 20, Large: 100, Hyperexpanded: 500} with proportion:
+              false; null = scRepertoire's defaults
+      construct:
+        type: object
+        default: {}
+        properties:
+          rna:
+            type: object
+            default: {}
+            properties:
+              rna_min_feat_cutoff: {type: number, default: 400}
+              rna_max_feat_cutoff: {type: [number, string], default: auto}
+              rna_percent_mt_cutoff: {type: number, default: 15}
+          adt:
+            type: object
+            default: {}
+            properties:
+              adt_feat_min: {type: number, default: 70}
+              adt_isocount_max: {type: number, default: 200}
+              normalization:
+                type: string
+                enum: [CLR, dsb]
+                default: CLR
+                description: >
+                  ADT normalisation of the final object. CLR (the original
+                  behaviour) re-normalises over the dsb values; dsb keeps them.
+          npcs: {type: integer, default: 50}
+          cluster_resolution: {type: number, default: 0.1}
+
+  integrate:
+    type: object
+    default: {}
+    properties:
+      harmony:
+        type: object
+        default: {}
+        properties:
+          adt_markers_file: {type: [string, "null"], default: null, description: "ADT features for the ADT PCA (one per line); null = all non-isotype ADTs"}
+          group_by_vars: {type: array, items: {type: string}, default: [orig.ident]}
+          rna_npcs: {type: integer, default: 50}
+          adt_npcs: {type: integer, default: 15}
+      wnn:
+        type: object
+        default: {}
+        properties:
+          k_nn: {type: integer, default: 20}
+          prune_snn: {type: [number, string], default: "1/15", description: "Number or fraction such as 1/15"}
+          rna_dims: {type: [integer, "null"], default: null, description: "null = every Harmony dimension"}
+          adt_dims: {type: [integer, "null"], default: null}
+
+  annotate:
+    type: object
+    default: {}
+    properties:
+      subset_wnn:
+        type: object
+        default: {k_nn: 10, prune_snn: "1/30", rna_dims: 15, adt_dims: 15}
+        description: "WNN settings when a subset is re-analysed; a population's own wnn block overrides them"
+      metadata:
+        type: object
+        default: {}
+        properties:
+          match_max_dist: {type: number, default: 0.05, description: "Jaro-Winkler distance allowed when matching sample names to the metadata table"}
+          plots: {type: object, default: {}, description: "UMAP and feature plots of the integrated object (visualization module)"}
+      populations:
+        type: array
+        minItems: 1
+        items:
+          type: object
+          required: [name, resolutions]
+          properties:
+            name: {type: string}
+            graph_name: {type: string, default: wsnn_harmony}
+            subset:
+              type: object
+              required: [base_name, base_resolution, base_clusters]
+              properties:
+                base_name: {type: string}
+                base_resolution: {type: number}
+                base_clusters: {description: "Clusters to keep: '0, 1, 8', 4, [0, 1] or all"}
+            resolutions: {type: object, description: "Schemes of {from, to, by} or {values: [...]}"}
+            wnn: {type: object}
+            findallmarkers: {type: object}
+            plots: {type: object}
+
+  visualization:
+    type: object
+    default: {}
+    properties:
+      reduction: {type: string, default: wnn.umap_harmony, description: "UMAP used by every plot"}
+
+  report:
+    type: object
+    default: {}
+    properties:
+      formats:
+        type: array
+        items: {type: string, enum: [html, docx, notion]}
+        default: [html, docx, notion]
+      max_table_rows: {type: integer, default: 40, description: "Rows shown per table (full tables stay in results/)"}
+      top_markers: {type: integer, default: 5, description: "Markers per cluster in the report's marker tables"}
+      resolutions:
+        type: object
+        default: {}
+        description: "Resolutions shown per population, e.g. {main: [0.07]}; default all"
+      threshold_set: {type: string, default: default, description: "Threshold set whose filtered markers the report shows"}
+      title: {type: [string, "null"], default: null, description: "Report title; default the project name and version"}
