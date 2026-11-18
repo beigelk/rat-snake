@@ -27,3 +27,6 @@ renv/
 # Development
 dev/
 manual_operations
+
+# Default R graphics device output
+Rplots.pdf
