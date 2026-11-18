@@ -1,0 +1,136 @@
+# ==============================================================================
+# rat-snake
+# RNA, ADT and TCR single-cell analysis of 10x CITE-seq + TCR data:
+# Cell Ranger multi, ambient RNA, doublets, ADT normalisation, clonotypes,
+# Harmony/WNN integration, population-by-population clustering, markers,
+# plots and a report.
+#
+# Start it through the controller, which sets up the environment and logging:
+#   bash rat-snake.sh -c config/config.yaml -r run -e slurm
+# ==============================================================================
+
+# ==============================================================================
+# IMPORTS
+# ==============================================================================
+import os
+import sys
+
+from snakemake.utils import min_version, validate
+
+min_version("9.0")
+
+WORKFLOW_DIR = workflow.basedir
+REPO_DIR = os.path.abspath(os.path.join(WORKFLOW_DIR, ".."))
+CORE_DIR = os.path.join(REPO_DIR, "core")
+MODULES_DIR = os.path.join(WORKFLOW_DIR, "modules")
+
+if not os.path.exists(os.path.join(CORE_DIR, "python", "snake_core")):
+    raise WorkflowError(
+        "core/ is empty. Run `git submodule update --init` (see README, 'Getting the code')."
+    )
+
+# Scripts run in their own processes (and containers): pass the core along
+sys.path.insert(0, os.path.join(CORE_DIR, "python"))
+sys.path.insert(0, os.path.join(WORKFLOW_DIR, "lib"))
+os.environ["SNAKE_CORE"] = CORE_DIR
+os.environ["PYTHONPATH"] = os.pathsep.join(
+    p for p in [os.path.join(CORE_DIR, "python"), os.environ.get("PYTHONPATH", "")] if p
+)
+
+from snake_core.logging import log_message
+from snake_core.paths import ProjectPaths
+from snake_core.software import module_env, tool_envmodules
+from snake_core.targets import collect_targets
+
+from rat_snake.context import context
+from rat_snake.populations import format_res
+from rat_snake.samples import FEATURE_TYPES
+
+
+# ==============================================================================
+# PROJECT CONFIGURATION
+# ==============================================================================
+# Fills in defaults and fails early with a clear message on a bad config
+validate(config, os.path.join(REPO_DIR, "config", "config.schema.yaml"))
+
+P = ProjectPaths(config)
+OUTPUT_DIR = P.output_dir
+PROJECT = P.project
+
+MODALITIES = list(config["modalities"])
+
+# Modules are included in this order, whatever order the config lists them
+# in, because later modules use names defined by earlier ones. Each module
+# also needs the modules listed in MODULE_NEEDS.
+MODULE_ORDER = ["setup", "cellranger", "preprocess", "integrate", "annotate", "visualization", "report"]
+MODULE_NEEDS = {
+    "cellranger": ["setup"],
+    "preprocess": ["cellranger"],
+    "integrate": ["preprocess"],
+    "annotate": ["integrate"],
+    "visualization": ["annotate"],
+    "report": ["visualization"],
+}
+MODULES = [m for m in MODULE_ORDER if m in config["modules"]]
+for _module in MODULES:
+    _missing = [n for n in MODULE_NEEDS.get(_module, []) if n not in MODULES]
+    if _missing:
+        raise WorkflowError(f"Module '{_module}' needs module(s) {_missing}; add them to `modules` in the config")
+
+# Samples and populations, shared with every module's targets.py
+CTX = context(config, P)
+SAMPLES = CTX.samples  # {dataset: {sample: {libraries, status, reason, run_dir}}}
+DATASETS = list(SAMPLES)
+USABLE = CTX.usable  # (dataset, sample) pairs that are preprocessed
+POPS = CTX.pops
+TCR_ENABLED = CTX.tcr
+if not USABLE:
+    raise WorkflowError("No usable samples: check each dataset's sample_ids table and `modalities`")
+
+wildcard_constraints:
+    dataset="|".join(sorted(DATASETS, key=len, reverse=True)),
+    sample="[^/]+",
+    modality="|".join(MODALITIES),
+
+_counts = {}
+for _d, _ss in SAMPLES.items():
+    for _s, _i in _ss.items():
+        _counts[_i["status"]] = _counts.get(_i["status"], 0) + 1
+log_message(
+    f"Project {PROJECT}: {len(DATASETS)} dataset(s), "
+    + ", ".join(f"{n} {k}" for k, n in sorted(_counts.items()))
+    + f" sample(s); modules: {', '.join(MODULES)}",
+    level="INFO",
+)
+
+
+def cellranger_input(wc):
+    """Input that makes a rule wait for the sample's Cell Ranger run (or use a finished one)."""
+    return CTX.cellranger_dir(wc.dataset, wc.sample)
+
+
+def r_env(module, variant="r"):
+    """Conda env or image of a module's R scripts."""
+    return module_env(module, config, MODULES_DIR, variant=variant)
+
+
+# ==============================================================================
+# INCLUDE MODULES
+# ==============================================================================
+for _module in MODULES:
+    include: os.path.join(MODULES_DIR, _module, f"{_module}.smk")
+
+
+# ==============================================================================
+# DEFAULT TARGET
+# ==============================================================================
+# Each module's targets.py lists what it adds; see core/python/snake_core/targets.py
+output_files = collect_targets(MODULES_DIR, MODULES, config, P)
+
+log_message("Starting rule executions.", level="START")
+
+
+rule all:
+    """Build every enabled module's final outputs."""
+    input:
+        output_files,

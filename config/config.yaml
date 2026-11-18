@@ -1,7 +1,32 @@
-project_info:
+# ==============================================================================
+# rat-snake config: every option, with the values of the original template.
+# config/config.schema.yaml describes each option and its default.
+# ==============================================================================
+
+project:
   name: example_project
   version: v0
+  output_root: output            # outputs go to output/example_project_v0/
 
+seed: 42
+debug: false                     # true: save each R job's Snakemake object under debug/
+
+modules: [setup, cellranger, preprocess, integrate, annotate, visualization, report]
+modalities: [gex, csp, vdj]      # libraries every sample needs; drop vdj to run without TCR
+
+# -- SOFTWARE -------------------------------------------------------------------
+software:
+  mode: conda                    # conda | conda_yaml | container | none
+  env_prefix: rat                # envs rat-preprocess-r, rat-annotate-r, ...
+  registry: ghcr.io/beigelk      # images for mode: container
+  envmodules:
+    cellranger: [CellRanger/9.0.1]
+  r_library: null                # extra R library put first on .libPaths()
+
+r_options:
+  future_globals_gb: 200
+
+# -- DATASETS -------------------------------------------------------------------
 datasets:
   dataset1:
     sample_ids: /user/data/dataset1/metadata/sample_ids.tsv
@@ -11,15 +36,12 @@ datasets:
       csp: /user/data/dataset1/CSP/fastq
       vdj: /user/data/dataset1/VDJ/fastq
     metadata:
-      input:
-        name: dataset1
-        file: input/metadata/dataset1_metadata.xlsx
-        sheet: Sheet1
-        id_col: Sample name
-        cols: [
-          Sample name, Age, Sex, Condition
-        ]
-        nrows: 40
+      name: dataset1
+      file: input/metadata/dataset1_metadata.xlsx
+      sheet: Sheet1
+      id_col: Sample name
+      cols: [Sample name, Age, Sex, Condition]
+      nrows: 40
 
   dataset2:
     sample_ids: /user/data/dataset2/metadata/sample_ids.tsv
@@ -29,62 +51,71 @@ datasets:
       csp: /user/data/dataset2/fastq
       vdj: /user/data/dataset2/fastq
     metadata:
-      input:
-        name: dataset1
-        file: input/metadata/dataset2_metadata.xlsx
-        sheet: Sheet1
-        id_col: Sample name
-        cols: [
-          Sample name, Age, Sex, Condition
-        ]
-        nrows: 20
+      name: dataset2
+      file: input/metadata/dataset2_metadata.xlsx
+      sheet: Sheet1
+      id_col: Sample name
+      cols: [Sample name, Age, Sex, Condition]
+      nrows: 20
 
+# -- CELL RANGER ----------------------------------------------------------------
 cellranger:
   gex_reference: /user/references/cellranger_ref/refdata-gex-GRCh38-2024-A
   csp_reference: /user/references/csp_reference/feature_reference.csv
   vdj_reference: /user/references/cellranger_ref/refdata-cellranger-vdj-GRCh38-alts-ensembl-7.1.0
+  path: null                     # cellranger executable; null = PATH / envmodules
+  scratch_dir: /scr1/users/$USER # run here, copy results back; null = run in place
+  threads: 16
+  mem_gb: 64
+  # Re-use finished runs instead of running Cell Ranger (never re-run):
+  existing_outs:
+    root: null                   # searched for {root}/{dataset}/{sample} and {root}/{sample}
+    samples: {}                  # e.g. {25_13_1205: /path/to/25_13_1205}
 
-
-# -- PREPROCESSING ---------------------------------------------------------------------------------------------------------------------------- #
+# -- PREPROCESSING --------------------------------------------------------------
 preprocess:
-  
-  # RNA 
-  rna:
-    soupx:
-      npcs: 50
-      resolution: 0.8
-    doubletfinder:
-      min_feat_cutoff: 400
-      max_feat_cutoff: auto
-      percent_mt_cutoff: 15
-  
-  # ADT
-  adt:
-    dsb:
-
-  # TCR
+  mt_pattern: "^MT-"
+  soupx:
+    npcs: 50
+    resolution: 0.8
+  doubletfinder:
+    min_feat_cutoff: 400
+    max_feat_cutoff: auto        # auto = median + 3 MAD
+    percent_mt_cutoff: 15
+    pN: 0.25
+  dsb:
+    background_prot_min: 1.5
+    background_prot_max: 3
+    background_rna_max: 2.5
+    mad_cutoff: 3
+    max_mt_prop: 0.14
   tcr:
-    clones:
+    enabled: true
+    clone_call: strict
+  construct:
+    rna:
+      rna_min_feat_cutoff: 400
+      rna_max_feat_cutoff: auto
+      rna_percent_mt_cutoff: 15
+    adt:
+      adt_feat_min: 70
+      adt_isocount_max: 200
+      normalization: CLR         # CLR (original) or dsb
 
-  # MULTIMODAL
-  multimodal:
-    construct:
-      rna:
-        rna_min_feat_cutoff: 400
-        rna_max_feat_cutoff: auto
-        rna_percent_mt_cutoff: 15
-      adt:
-        adt_feat_min: 70
-        adt_isocount_max: 200
-
-# -- INTEGRATION ------------------------------------------------------------------------------------------------------------------------------ #
+# -- INTEGRATION ----------------------------------------------------------------
 integrate:
-  # HARMONY
   harmony:
     adt_markers_file: input/reference/adt_features_of_interest.txt
+    group_by_vars: [orig.ident]
+    rna_npcs: 50
+    adt_npcs: 15
+  wnn:
+    k_nn: 20
+    prune_snn: 1/15
 
-# -- METADATA ------------------------------------------------------------------------------------------------------------------------------ #
+# -- ANNOTATION -----------------------------------------------------------------
 annotate:
+  subset_wnn: {k_nn: 10, prune_snn: 1/30, rna_dims: 15, adt_dims: 15}
   metadata:
     plots:
       umap:
@@ -236,3 +267,14 @@ annotate:
             top5_default:        {type: topn,     threshold_set: default,  top_n: 5}
             top10_default:       {type: topn,     threshold_set: default,  top_n: 10}
             adt_markers:         {type: genelist, file: input/reference/adt_features_of_interest.txt}
+
+# -- PLOTS AND REPORT -----------------------------------------------------------
+visualization:
+  reduction: wnn.umap_harmony
+
+report:
+  formats: [html, docx, notion]
+  max_table_rows: 40
+  top_markers: 5
+  threshold_set: default
+  resolutions: {}                # e.g. {main: [0.07], epithelial: [0.4, 1]}; default all
