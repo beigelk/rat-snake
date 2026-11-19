@@ -6,7 +6,8 @@
 project:
   name: example_project
   version: v0
-  output_root: output            # outputs go to output/example_project_v0/
+  output_root: output            # outputs go to output/example_project_v0/; on the cluster use e.g.
+                                 # /scr1/users/<username>/rat-snake/output (home is small and shared)
 
 seed: 42
 debug: false                     # true: save each R job's Snakemake object under debug/

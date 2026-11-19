@@ -98,15 +98,18 @@ Snakemake's state are in `output/` and `.snakemake/`, temporary files in
 `tmp/`, caches (Snakemake's source cache, pip, the Apptainer image cache) in
 `.snakemake/cache/` (set `CACHE_DIR_OVERRIDE` to use another folder), and
 Cell Ranger runs in `cellranger.scratch_dir`. So keep the pipeline folder on
-a project or scratch file system, not in home.
+a project or scratch file system, not in home (on our cluster:
+`/scr1/users/$USER`, 20 TB). To keep the outputs there while the code stays
+elsewhere, set `project.output_root` to a folder under it (write the path
+out; `$USER` is not expanded in the config).
 
 Conda decides where envs and downloaded packages go (often `~/.conda`).
 The module envs take several GB, so on a small or shared home, point conda
 elsewhere before running `envs/create_module_envs.sh`, in `~/.condarc`:
 
 ```yaml
-envs_dirs: [/path/with/space/conda/envs]
-pkgs_dirs: [/path/with/space/conda/pkgs]
+envs_dirs: [/scr1/users/<username>/conda/envs]
+pkgs_dirs: [/scr1/users/<username>/conda/pkgs]
 ```
 
 The controller warns when conda still uses home.
