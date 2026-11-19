@@ -12,6 +12,7 @@ from rat_snake.populations import Populations, expand_resolutions, format_res, p
 from rat_snake.samples import (  # noqa: E402
     build_samples,
     cellranger_files,
+    fastq_libraries,
     read_sample_table,
     resolve_run_dir,
     shared_tokens,
@@ -72,11 +73,22 @@ def test_resolve_run_dir_and_files(tmp_path):
     assert files["metrics"].endswith("other_A_1/metrics_summary.csv")
 
 
+def write_fastqs(folder, libs):
+    """Empty R1/R2 FASTQs named like the sequencer's: {TAG}_{library}_L001_R1_001.fastq.gz."""
+    folder.mkdir(exist_ok=True)
+    for tag, lib in libs:
+        for r in ("R1", "R2"):
+            (folder / f"{tag}_{lib}_L001_{r}_001.fastq.gz").write_text("")
+
+
 def config_for(tmp_path, existing=None, modalities=("gex", "csp", "vdj")):
     t = write_table(tmp_path / "s.tsv", ["A_1_S1\tA_1_S2\tA_1_S3", "B_S4\tB_S5\t"])
+    fq = tmp_path / "fastq"
+    write_fastqs(fq, [("GEX", "A_1_S1"), ("CSP", "A_1_S2"), ("VDJ", "A_1_S3"), ("GEX", "B_S4"), ("CSP", "B_S5")])
     return {
         "modalities": list(modalities),
-        "datasets": {"d1": {"sample_ids": t}, "off": {"sample_ids": "x", "enabled": False}},
+        "datasets": {"d1": {"sample_ids": t, "input_dirs": {"gex": str(fq), "csp": str(fq), "vdj": str(fq)}},
+                     "off": {"sample_ids": "x", "enabled": False}},
         "cellranger": {"existing_outs": existing or {}},
     }
 
@@ -89,6 +101,32 @@ def test_build_samples_statuses(tmp_path):
     # Without vdj in modalities, B is usable
     s = build_samples(config_for(tmp_path, modalities=("gex", "csp")))
     assert s["d1"]["B"]["status"] == "run"
+
+
+def test_samples_without_fastqs_are_excluded(tmp_path):
+    cfg = config_for(tmp_path)
+    # Only R1 for A_1's VDJ library: not enough
+    (tmp_path / "fastq" / "VDJ_A_1_S3_L001_R2_001.fastq.gz").unlink()
+    s = build_samples(cfg)
+    assert s["d1"]["A_1"]["status"] == "excluded"
+    assert "vdj (A_1_S3)" in s["d1"]["A_1"]["reason"]
+    # A finished Cell Ranger run needs no FASTQs
+    root = tmp_path / "runs"
+    make_run(root, "A_1")
+    cfg["cellranger"]["existing_outs"] = {"root": str(root)}
+    assert build_samples(cfg)["d1"]["A_1"]["status"] == "existing"
+
+
+def test_fastq_libraries_match_samplesheet(tmp_path):
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "workflow", "modules", "setup", "scripts"))
+    from make_samplesheet import scan
+
+    fq = tmp_path / "fq"
+    write_fastqs(fq, [("GEX", "25_13_1205_S25"), ("GEX", "Spleen_7_S1"), ("CSP", "25_13_1205_S41")])
+    (fq / "GEX-only_r1_S9_L002_R1_001.fastq.gz").write_text("")
+    data, _, _ = scan([str(fq)], "fastq.gz", "GEX")
+    paired = {lib for lib, lanes in data.items() if any({"R1", "R2"} <= set(r) for r in lanes.values())}
+    assert fastq_libraries([str(fq)], "fastq.gz", "gex") == paired == {"25_13_1205_S25", "Spleen_7_S1"}
 
 
 def test_build_samples_existing_outs(tmp_path):

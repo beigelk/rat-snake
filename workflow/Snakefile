@@ -102,6 +102,10 @@ log_message(
     + f" sample(s); modules: {', '.join(MODULES)}",
     level="INFO",
 )
+for _d, _ss in SAMPLES.items():
+    for _s, _i in _ss.items():
+        if _i["status"] == "excluded":
+            log_message(f"Skipping {_d}/{_s}: {_i.get('reason', 'excluded')}", level="WARN")
 
 
 def cellranger_input(wc):

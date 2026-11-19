@@ -13,8 +13,10 @@ by an optional ``sample`` column. Each sample then gets one status:
 ``run``       Cell Ranger multi runs from its FASTQs.
 ``existing``  ``cellranger.existing_outs`` points at a finished Cell Ranger
               run, which is used as it is; Cell Ranger never runs for it.
-``excluded``  A required library is missing from the table; the sample is
-              left out (and listed in ``results/setup/sample_status.tsv``).
+``excluded``  A required library is missing from the table, or has no
+              FASTQs (R1 and R2) in the dataset's ``input_dirs``; the sample
+              is left out before any job is submitted (and listed in
+              ``results/setup/sample_status.tsv`` with the reason).
 """
 
 import csv
@@ -167,6 +169,38 @@ def check_existing_run(run_dir, sample, need_vdj):
     return [files[k] for k in needed if not os.path.exists(files[k])]
 
 
+def fastq_libraries(dirs, filetype, modality):
+    """Libraries with FASTQs in the given folders, found the way the samplesheet finds them.
+
+    Same parsing as ``setup/scripts/make_samplesheet.py``: a file
+    ``*{MODALITY}[-_]{library}_L00N_R1_*.{filetype}`` belongs to ``library``.
+    A library counts only when it has both an R1 and an R2 file.
+
+    Args:
+        dirs: Folders to search (all of a dataset's ``input_dirs``).
+        filetype: File extension, e.g. ``fastq.gz``.
+        modality: Modality key, e.g. ``gex`` (matched in upper case).
+
+    Returns:
+        Set of library names.
+    """
+    tag = re.compile(rf"{re.escape(modality.upper())}[-_]*")
+    reads = {}
+    for d in dict.fromkeys(dirs):
+        for f in glob.glob(os.path.join(d, f"*.{filetype}")):
+            name = os.path.basename(f)
+            m = tag.search(name)
+            if not m:
+                continue
+            after = name[m.end():]
+            lane = re.search(r"_L\d{3}_", after)
+            read = re.search(r"_(R[12])_", after)
+            if not lane or not read or not re.search(r"_L\d{3}_R[12]", name):
+                continue
+            reads.setdefault(after[: lane.start()].strip("-_"), set()).add(read.group(1))
+    return {lib for lib, rs in reads.items() if {"R1", "R2"} <= rs}
+
+
 def build_samples(config):
     """Read every dataset's samples and give each a status.
 
@@ -185,6 +219,7 @@ def build_samples(config):
     modalities = list(config.get("modalities", ["gex", "csp", "vdj"]))
     need_vdj = "vdj" in modalities and config.get("preprocess", {}).get("tcr", {}).get("enabled", True)
     out = {}
+    found = {}  # (dataset, modality) -> libraries with FASTQs, read once per run
     for dataset, dcfg in config["datasets"].items():
         if not dcfg.get("enabled", True):
             continue
@@ -205,6 +240,18 @@ def build_samples(config):
                 lacking = [m for m in modalities if m not in libs]
                 if lacking:
                     info.update(status="excluded", reason=f"no {', '.join(lacking)} library in the sample table")
+                else:
+                    # Every library needs FASTQs, so Cell Ranger is never started for a
+                    # sample that would fail
+                    dirs = list((dcfg.get("input_dirs") or {}).values())
+                    no_fastqs = []
+                    for m in modalities:
+                        if (dataset, m) not in found:
+                            found[(dataset, m)] = fastq_libraries(dirs, dcfg.get("filetype", "fastq.gz"), m)
+                        if libs[m] not in found[(dataset, m)]:
+                            no_fastqs.append(f"{m} ({libs[m]})")
+                    if no_fastqs:
+                        info.update(status="excluded", reason=f"no FASTQs (R1 and R2) for {', '.join(no_fastqs)}")
             out[dataset][sample] = info
     return out
 

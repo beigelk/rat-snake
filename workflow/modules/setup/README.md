@@ -7,6 +7,11 @@ Records what a run used and lists the FASTQs Cell Ranger will read.
   `sample_ids` table: its libraries, whether Cell Ranger runs for it (`run`),
   a finished run is used (`existing`, from `cellranger.existing_outs`) or it
   is left out (`excluded`, with the reason).
+- A sample is excluded when the sample table has no library for one of the
+  dataset's `modalities`, or when any of its libraries has no R1 and R2
+  FASTQs in the dataset's `input_dirs`. Excluded samples get no jobs at all,
+  and each one is logged as a warning at start-up. Samples that use
+  `cellranger.existing_outs` are not checked for FASTQs.
 - `results/setup/samplesheet/samplesheet_{dataset}_{modality}.tsv` lists each
   library's FASTQs, one column per lane and read. Only datasets with samples
   to run get samplesheets.
