@@ -91,6 +91,26 @@ benchmarks/{module}/     time and memory per job
 debug/{module}/          saved Snakemake objects (debug: true)
 ```
 
+## Disk space
+
+Nothing the pipeline writes goes to your home folder: results, logs and
+Snakemake's state are in `output/` and `.snakemake/`, temporary files in
+`tmp/`, caches (Snakemake's source cache, pip, the Apptainer image cache) in
+`.snakemake/cache/` (set `CACHE_DIR_OVERRIDE` to use another folder), and
+Cell Ranger runs in `cellranger.scratch_dir`. So keep the pipeline folder on
+a project or scratch file system, not in home.
+
+Conda decides where envs and downloaded packages go (often `~/.conda`).
+The module envs take several GB, so on a small or shared home, point conda
+elsewhere before running `envs/create_module_envs.sh`, in `~/.condarc`:
+
+```yaml
+envs_dirs: [/path/with/space/conda/envs]
+pkgs_dirs: [/path/with/space/conda/pkgs]
+```
+
+The controller warns when conda still uses home.
+
 ## Debugging
 
 **Skip Cell Ranger.** Point `cellranger.existing_outs` at finished Cell
