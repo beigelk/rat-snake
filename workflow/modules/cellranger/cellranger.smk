@@ -64,6 +64,10 @@ rule cellranger_multi:
     threads: CR_CFG.get("threads", 16)
     resources:
         mem_mb=CR_CFG.get("mem_gb", 64) * 1024 + 4096,
+        # Slurm: ask for as many CPUs as Cell Ranger uses. Without this, the
+        # profile's default cpus_per_task (1) wins over threads and all
+        # --localcores share one CPU.
+        cpus_per_task=CR_CFG.get("threads", 16),
         cellranger_jobs=1,
     envmodules:
         *tool_envmodules("cellranger", config),

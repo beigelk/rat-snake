@@ -2,6 +2,8 @@
 # envs/conda_setup.sh). Edit account and partition for your cluster.
 # Cell Ranger's threads and memory come from the config (cellranger.threads,
 # cellranger.mem_gb); its runtime is set here.
+# With Slurm, cpus_per_task (not threads) sets the CPUs a job gets: rules
+# that use several threads need cpus_per_task here or in the rule.
 executor: slurm
 jobs: 100
 latency-wait: 60
@@ -31,6 +33,7 @@ set-threads:
 
 set-resources:
   cellranger_multi:
+    # CPUs and memory come from cellranger.threads and cellranger.mem_gb
     runtime: 24h
   soupx:
     mem_mb: 64000
