@@ -72,7 +72,25 @@ bash rat-snake.sh -c config/my_project.yaml               # dry run (default)
 bash rat-snake.sh -c config/my_project.yaml -r run        # run here
 bash rat-snake.sh -c config/my_project.yaml -r run -e slurm
 bash rat-snake.sh -c config/my_project.yaml -r run -- --until harmony   # anything after -- goes to snakemake
+bash rat-snake.sh -c config/my_project.yaml -r jobs       # this project's Slurm jobs, with rule and sample
 ```
+
+### Slurm job names
+
+The Slurm executor gives every job of a run the same name and uses that name
+to track the jobs, so the name cannot differ per rule or sample. With
+`-e slurm` the name starts with the pipeline and project
+(`rat-snake_<name>_<version>_<run id>`), and the rule and wildcards (dataset,
+sample, population) go in the job's comment, e.g.
+`rule_cellranger_multi_wildcards_d1_25_13_1205`. `-r jobs` lists the
+project's queued and running jobs with that comment as a "RULE" column. With
+plain `squeue`, add the comment column (`%k`):
+
+```bash
+squeue --me --format "%.10i %.9T %.10M %.40j %k"
+```
+
+Each job's Slurm log is under `.snakemake/slurm_logs/rule_<rule>/<wildcards>/<jobid>.log`.
 
 Every option is in `config/config.yaml` and described, with its default, in
 `config/config.schema.yaml`; the config is checked against the schema at
